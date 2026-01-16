@@ -4,37 +4,60 @@ import 'leaflet/dist/leaflet.css';
 
 // Fetch road network from OSM Overpass API
 const fetchRoadNetwork = async (bounds) => {
-  const { south, west, north, east } = bounds;
-  const query = `
-    [out:json][timeout:25];
-    way["highway"~"motorway|trunk|primary|secondary|tertiary|residential"](${south},${west},${north},${east});
-    (._;>;);
-    out body;
-  `;
-  
   const servers = [
     'https://overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass.openstreetmap.ru/api/interpreter',
+    'https://overpass.nchc.org.tw/api/interpreter',
     'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
   ];
-  
-  for (const server of servers) {
-    try {
-      const response = await fetch(server, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body: `data=${encodeURIComponent(query)}`
-      });
-      if (response.ok) {
-        return response.json();
+
+  const makeQuery = (b, timeoutSeconds) => `
+    [out:json][timeout:${timeoutSeconds}];
+    way["highway"~"motorway|trunk|primary|secondary|tertiary|residential"](${b.south},${b.west},${b.north},${b.east});
+    (._;>;);
+    out body;
+  `;
+
+  const shrinkBounds = (b, factor) => {
+    const centerLat = (b.north + b.south) / 2;
+    const centerLon = (b.east + b.west) / 2;
+    const latHalf = ((b.north - b.south) * factor) / 2;
+    const lonHalf = ((b.east - b.west) * factor) / 2;
+    return {
+      south: centerLat - latHalf,
+      west: centerLon - lonHalf,
+      north: centerLat + latHalf,
+      east: centerLon + lonHalf
+    };
+  };
+
+  const attempts = [
+    { bounds, timeout: 25 },
+    { bounds: shrinkBounds(bounds, 0.7), timeout: 30 },
+    { bounds: shrinkBounds(bounds, 0.5), timeout: 35 }
+  ];
+
+  for (const attempt of attempts) {
+    const query = makeQuery(attempt.bounds, attempt.timeout);
+    for (const server of servers) {
+      try {
+        const response = await fetch(server, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: `data=${encodeURIComponent(query)}`
+        });
+        if (response.ok) {
+          return response.json();
+        }
+      } catch (e) {
+        console.log(`Server ${server} failed, trying next...`);
       }
-    } catch (e) {
-      console.log(`Server ${server} failed, trying next...`);
     }
   }
-  
+
   throw new Error('All Overpass servers failed');
 };
 
@@ -252,9 +275,8 @@ const RoadLoader = ({ setBounds, isMapLocked }) => {
       });
     };
     
-    if (!isMapLocked) {
-      map.on('moveend', updateBounds);
-    }
+    // Always listen for moveend so programmatic flyToBounds updates bounds
+    map.on('moveend', updateBounds);
     
     // Always trigger once on load/lock change to ensure initial data
     updateBounds();
@@ -328,6 +350,14 @@ const CITIES = {
   }
 };
 
+const boundsFromPoints = (a, b, padding = 0.01) => {
+  const south = Math.min(a.lat, b.lat) - padding;
+  const north = Math.max(a.lat, b.lat) + padding;
+  const west = Math.min(a.lng, b.lng) - padding;
+  const east = Math.max(a.lng, b.lng) + padding;
+  return { south, west, north, east };
+};
+
 const RealMapVisualizer = () => {
   const [cityKey, setCityKey] = useState('toronto'); // Default to Toronto
   const city = CITIES[cityKey];
@@ -396,6 +426,7 @@ const RealMapVisualizer = () => {
     setCityKey(key);
     setStart(newCity.start);
     setEnd(newCity.end);
+    setBounds(boundsFromPoints(newCity.start, newCity.end, 0.01));
     setGraph({ nodes: {}, edges: {}, ways: [] }); // Clear old graph
     setVisitedEdges([]);
     setFinalPath([]);
