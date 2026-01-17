@@ -476,23 +476,49 @@ const RealMapVisualizer = () => {
   const recordedChunksRef = useRef([]);
   const pendingStreamRef = useRef(null); // Store stream until countdown finishes
   
-  // Map flyTo logic when city changes
-  const ChangeView = ({ center, isMapLocked }) => {
+  // Map flyTo logic when city changes - Enhanced to respect Shorts Mode padding
+  const ChangeView = ({ center, isMapLocked, isShortsMode, city }) => {
     const map = useMap();
+    
+    const fitToRoute = useCallback(() => {
+      if (!city || !city.start || !city.end) return;
+      
+      const bounds = [
+        [city.start.lat, city.start.lng],
+        [city.end.lat, city.end.lng]
+      ];
+      
+      // Dynamic horizontal padding for Shorts Mode
+      let hPadding = 50;
+      if (isShortsMode) {
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        const shortsWidth = (viewportHeight - 125) * 9 / 16;
+        // Padding on one side = (Total width - Shorts Width) / 2
+        hPadding = (viewportWidth - shortsWidth) / 2 + 40; // 40px extra buffer
+      }
+
+      map.flyToBounds(bounds, { 
+        paddingBottomRight: [hPadding, 120],
+        paddingTopLeft: [hPadding, 50],
+        duration: 1.5 
+      });
+    }, [map, city, isShortsMode]);
+
     useEffect(() => {
       if (center) {
-        // Automatically fit both start and end points in view with padding
-        const bounds = [
-          [city.start.lat, city.start.lng],
-          [city.end.lat, city.end.lng]
-        ];
-        map.flyToBounds(bounds, { 
-          paddingBottomRight: [50, 120], // Add more space at bottom to see lake/sea
-          paddingTopLeft: [50, 50],
-          duration: 1.5 
-        });
+        fitToRoute();
       }
-    }, [center, map, city.start, city.end]);
+    }, [center, fitToRoute]);
+    
+    // Automatically refit when toggling Shorts Mode
+    useEffect(() => {
+      if (isShortsMode) {
+        // Short delay to allow CSS transitions or layout shifts if any
+        const timer = setTimeout(fitToRoute, 300);
+        return () => clearTimeout(timer);
+      }
+    }, [isShortsMode, fitToRoute]);
 
     useEffect(() => {
       if (isMapLocked) {
@@ -1099,6 +1125,16 @@ const RealMapVisualizer = () => {
               disabled={!start || !end || isLoading || countdown !== null}
               className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 text-white rounded font-bold flex-1"
             >▶ Start</button>
+            {isShortsMode && start && end && (
+              <button
+                onClick={() => {
+                  setIsShortsMode(false);
+                  setTimeout(() => setIsShortsMode(true), 10);
+                }}
+                title="Fit path into 9:16 area"
+                className="px-3 py-2 bg-purple-700 hover:bg-purple-600 text-white rounded"
+              >🎯</button>
+            )}
             <button
               onClick={resetAll}
               className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded"
@@ -1214,7 +1250,7 @@ const RealMapVisualizer = () => {
         className={`w-full h-full ${isRunning ? 'map-dimmed' : 'map-normal'}`}
       >
         <ZoomControl position="topright" />
-        <ChangeView center={city.center} isMapLocked={isMapLocked} />
+        <ChangeView center={city.center} isMapLocked={isMapLocked} isShortsMode={isShortsMode} city={city} />
         <TileLayer
           attribution='&copy; <a href="https://carto.com/">CARTO</a>'
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
