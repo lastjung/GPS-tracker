@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { MapContainer, TileLayer, Polyline, CircleMarker, Rectangle, useMap, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, CircleMarker, Rectangle, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
 // Sound effects using Web Audio API
@@ -717,6 +717,10 @@ const RealMapVisualizer = () => {
       return () => clearTimeout(timer);
     } else {
       // Countdown finished, start the algorithm
+      // Set recording state FIRST to prevent control panel flash
+      if (pendingStreamRef.current) {
+        setIsRecording(true);
+      }
       setCountdown(null);
       // Re-call runAlgorithm which will now proceed since countdown is null
       setTimeout(() => {
@@ -1140,8 +1144,10 @@ const RealMapVisualizer = () => {
       <MapContainer 
         center={city.center} 
         zoom={13} 
+        zoomControl={false}
         className={`w-full h-full ${isRunning ? 'map-dimmed' : 'map-normal'}`}
       >
+        <ZoomControl position="topright" />
         <ChangeView center={city.center} isMapLocked={isMapLocked} />
         <TileLayer
           attribution='&copy; <a href="https://carto.com/">CARTO</a>'

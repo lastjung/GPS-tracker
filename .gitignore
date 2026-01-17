@@ -30,3 +30,6 @@ Thumbs.db
 
 # Agent
 .agent/
+
+# Recordings
+webm/
