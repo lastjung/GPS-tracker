@@ -236,7 +236,7 @@ function* dijkstraOnGraph(nodes, edges, startId, endId) {
         previous[neighborId] = currentId;
         pq.push([newDist, neighborId]);
         visitedEdges.push([[current.lat, current.lon], [neighbor.lat, neighbor.lon]]);
-        yield { type: 'visiting', visitedEdges: [...visitedEdges] };
+        yield { type: 'visiting', visitedEdges: [...visitedEdges], currentDistance: newDist };
       }
     }
   }
@@ -287,7 +287,7 @@ function* astarOnGraph(nodes, edges, startId, endId) {
         fScore[neighborId] = tentativeG + haversine(neighbor.lat, neighbor.lon, endNode.lat, endNode.lon);
         openSet.push([fScore[neighborId], neighborId]);
         visitedEdges.push([[current.lat, current.lon], [neighbor.lat, neighbor.lon]]);
-        yield { type: 'visiting', visitedEdges: [...visitedEdges] };
+        yield { type: 'visiting', visitedEdges: [...visitedEdges], currentDistance: tentativeG };
       }
     }
   }
@@ -799,7 +799,13 @@ const RealMapVisualizer = () => {
             const filteredEdges = density === 1 ? allEdges : allEdges.filter((_, i) => i % density === 0);
             setVisitedEdges(filteredEdges);
             const currentElapsed = Date.now() - startTimeRef.current;
-            setStats(prev => ({ ...prev, edges: allEdges.length, time: currentElapsed }));
+            const currentDistMeters = (lastValue.currentDistance || 0) * 1000;
+            setStats(prev => ({ 
+              ...prev, 
+              edges: allEdges.length, 
+              time: currentElapsed,
+              distance: currentDistMeters 
+            }));
             
             // Play subtle tick every ~50 edges
             if (allEdges.length % 50 === 0) playSearchTick();
