@@ -475,10 +475,12 @@ const RealMapVisualizer = () => {
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
   const pendingStreamRef = useRef(null); // Store stream until countdown finishes
+  const lastFitRef = useRef(0); // Lock for fitToRoute to prevent shaking
   
   // Map flyTo logic when city changes - Enhanced to respect Shorts Mode padding
   const ChangeView = ({ center, isMapLocked, isShortsMode, city }) => {
     const map = useMap();
+    const lastFitRef = useRef(0);
     
     const fitToRoute = useCallback(() => {
       if (!city || !city.start || !city.end) return;
@@ -493,32 +495,40 @@ const RealMapVisualizer = () => {
       if (isShortsMode) {
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
-        const shortsWidth = (viewportHeight - 125) * 9 / 16;
+        const shortsWidth = viewportHeight * 9 / 16;
         // Padding on one side = (Total width - Shorts Width) / 2
-        hPadding = (viewportWidth - shortsWidth) / 2 + 40; // 40px extra buffer
+        hPadding = (viewportWidth - shortsWidth) / 2 + 20; // Reduced buffer to 20 for tighter fit
       }
+
+      // 0.6s Debounce / Lock for Shorts Mode to prevent double-zoom shaking
+      const now = Date.now();
+      if (isShortsMode && now - lastFitRef.current < 600) return;
+      lastFitRef.current = now;
 
       map.flyToBounds(bounds, { 
         paddingBottomRight: [hPadding, 120],
         paddingTopLeft: [hPadding, 50],
-        duration: 1.5 
+        duration: isShortsMode ? 0 : 1.5, // Snap in Shorts Mode for stability
+        animate: !isShortsMode // No animation in Shorts Mode to prevent shaking
       });
+
+      if (isShortsMode) {
+        // Run zoom boost once after snap
+        setTimeout(() => {
+          map.setZoom(map.getZoom() + 0.35);
+        }, 50); // Small delay after snap to ensure bounds are settled
+      }
     }, [map, city, isShortsMode]);
 
     useEffect(() => {
-      if (center) {
-        fitToRoute();
-      }
-    }, [center, fitToRoute]);
-    
-    // Automatically refit when toggling Shorts Mode
-    useEffect(() => {
-      if (isShortsMode) {
-        // Short delay to allow CSS transitions or layout shifts if any
-        const timer = setTimeout(fitToRoute, 300);
-        return () => clearTimeout(timer);
-      }
-    }, [isShortsMode, fitToRoute]);
+      if (!center) return;
+      const now = Date.now();
+      if (now - lastFitRef.current < 600) return;
+      lastFitRef.current = now;
+      const delay = isShortsMode ? 250 : 0;
+      const timer = setTimeout(fitToRoute, delay);
+      return () => clearTimeout(timer);
+    }, [center, isShortsMode, fitToRoute]);
 
     useEffect(() => {
       if (isMapLocked) {
@@ -955,10 +965,10 @@ const RealMapVisualizer = () => {
           {/* Left Shadow - Solid Black for Theater Mode */}
           <div className="h-full bg-black flex-1"></div>
           
-          {/* 9:16 Content Area Shell - Calculated with 125px header crop in mind */}
+          {/* 9:16 Content Area Shell - Pure 9:16 Ratio */}
           <div 
             className="h-full border-x border-dashed border-white/40 relative shadow-[0_0_50px_rgba(0,0,0,0.5)]"
-            style={{ width: 'calc((100vh - 125px) * 9/16)' }}
+            style={{ width: 'min(100vw, 100vh * 9/16)' }}
           >
             {/* Guide Corner Marks */}
             <div className="absolute top-4 left-4 border-t-2 border-l-2 border-white/50 w-4 h-4"></div>
@@ -982,7 +992,7 @@ const RealMapVisualizer = () => {
       <div 
         className={`absolute top-4 z-[1000] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 max-w-xs transition-all duration-300`}
         style={isShortsMode ? { 
-          left: 'calc(50vw - ((100vh - 125px) * 9/16 / 2) + 12px)', 
+          left: 'max(1rem, calc(50vw - (100vh * 9/16 / 2) + 12px))', 
           transform: 'none' 
         } : { left: '1rem' }}
       >
@@ -1224,7 +1234,7 @@ const RealMapVisualizer = () => {
         <div 
           className={`absolute top-4 z-[1001] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 max-w-xs transition-all duration-300`}
           style={isShortsMode ? { 
-            left: 'calc(50vw - ((100vh - 125px) * 9/16 / 2) + 12px)', 
+            left: 'max(1rem, calc(50vw - (100vh * 9/16 / 2) + 12px))', 
             transform: 'none' 
           } : { left: '1rem' }}
         >
