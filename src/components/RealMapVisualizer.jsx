@@ -1160,13 +1160,7 @@ const RealMapVisualizer = () => {
           isRunning={isRunning}
         />
         
-        {/* Boundary Box */}
-        {bounds && (
-          <Rectangle
-            bounds={[[bounds.south, bounds.west], [bounds.north, bounds.east]]}
-            pathOptions={{ color: '#fbbf24', weight: 2, fill: false, dashArray: '5, 5' }}
-          />
-        )}
+        {/* Boundary Box - Removed for cleaner recording */}
         
         {/* All roads (High Performance Multi-Polyline) */}
         {graph.ways.length > 0 && (

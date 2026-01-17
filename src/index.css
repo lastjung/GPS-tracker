@@ -8,6 +8,11 @@
   background-color: #242424;
 }
 
+/* Hide attribution for cleaner recording */
+.leaflet-control-attribution {
+  display: none !important;
+}
+
 body {
   margin: 0;
   padding: 0;
