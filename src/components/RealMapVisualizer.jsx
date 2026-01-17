@@ -461,6 +461,7 @@ const RealMapVisualizer = () => {
   const [processingDots, setProcessingDots] = useState('');
   const [displayMode, setDisplayMode] = useState('Visualize');
   const [isMapLocked, setIsMapLocked] = useState(true); // Locked by default as requested
+  const [isShortsMode, setIsShortsMode] = useState(false); // 9:16 Shorts Guide Mode
   const [delayedStart, setDelayedStart] = useState(false); // 3-second delay before start (disabled)
   const [countdown, setCountdown] = useState(null); // Countdown display
   const [recordMode, setRecordMode] = useState(false); // Vertical recording mode
@@ -915,6 +916,34 @@ const RealMapVisualizer = () => {
   
   return (
     <div className="relative w-full h-screen">
+      {/* Shorts Guide Overlay - 9:16 Letterbox */}
+      {isShortsMode && (
+        <div className="absolute inset-0 z-[1002] pointer-events-none flex justify-center">
+          {/* Left Shadow */}
+          <div className="h-full bg-black/60 flex-1"></div>
+          
+          {/* 9:16 Content Area Shell */}
+          <div 
+            className="h-full border-x border-dashed border-white/30 relative"
+            style={{ aspectRatio: '9/16' }}
+          >
+            {/* Guide Corner Marks */}
+            <div className="absolute top-4 left-4 border-t-2 border-l-2 border-white/50 w-4 h-4"></div>
+            <div className="absolute top-4 right-4 border-t-2 border-r-2 border-white/50 w-4 h-4"></div>
+            <div className="absolute bottom-4 left-4 border-l-2 border-b-2 border-white/50 w-4 h-4"></div>
+            <div className="absolute bottom-4 right-4 border-r-2 border-b-2 border-white/50 w-4 h-4"></div>
+            
+            {/* Label */}
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/50 px-2 py-0.5 rounded text-[10px] text-white/50 font-mono">
+              Shorts Safe Zone (9:16)
+            </div>
+          </div>
+          
+          {/* Right Shadow */}
+          <div className="h-full bg-black/60 flex-1"></div>
+        </div>
+      )}
+
       {/* Control Panel - Hidden during running/recording/countdown, visible in idle and success */}
       {!recordMode && !isRunning && !countdown && !isRecording && (
       <div className="absolute top-4 left-4 z-[1000] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 max-w-xs">
@@ -1020,6 +1049,16 @@ const RealMapVisualizer = () => {
                   className="w-4 h-4 rounded accent-orange-500"
                 />
                 <label htmlFor="lockToggle" className="text-xs text-orange-300 font-bold cursor-pointer">Lock Map View</label>
+              </div>
+              <div className="flex items-center gap-2">
+                <input 
+                  type="checkbox" 
+                  id="shortsToggle"
+                  checked={isShortsMode} 
+                  onChange={(e) => setIsShortsMode(e.target.checked)}
+                  className="w-4 h-4 rounded accent-purple-500"
+                />
+                <label htmlFor="shortsToggle" className="text-xs text-purple-300 font-bold cursor-pointer">9:16 Shorts Mode</label>
               </div>
             </div>
             
