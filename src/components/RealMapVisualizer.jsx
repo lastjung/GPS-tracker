@@ -923,10 +923,10 @@ const RealMapVisualizer = () => {
           {/* Left Shadow */}
           <div className="h-full bg-black/60 flex-1"></div>
           
-          {/* 9:16 Content Area Shell */}
+          {/* 9:16 Content Area Shell - Calculated with 125px header crop in mind */}
           <div 
-            className="h-full border-x border-dashed border-white/30 relative"
-            style={{ aspectRatio: '9/16' }}
+            className="h-full border-x border-dashed border-white/40 relative shadow-[0_0_50px_rgba(0,0,0,0.5)]"
+            style={{ width: 'calc((100vh - 125px) * 9/16)' }}
           >
             {/* Guide Corner Marks */}
             <div className="absolute top-4 left-4 border-t-2 border-l-2 border-white/50 w-4 h-4"></div>
@@ -949,7 +949,10 @@ const RealMapVisualizer = () => {
       {!recordMode && !isRunning && !countdown && !isRecording && (
       <div 
         className={`absolute top-4 z-[1000] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 max-w-xs transition-all duration-300`}
-        style={isShortsMode ? { left: 'calc(50% - (window.innerHeight * 9/16 / 2))', transform: 'none' } : { left: '1rem' }}
+        style={isShortsMode ? { 
+          left: 'calc(50vw - ((100vh - 125px) * 9/16 / 2) + 12px)', 
+          transform: 'none' 
+        } : { left: '1rem' }}
       >
         <h2 className="text-xl font-bold mb-1 text-cyan-400">Path Finder</h2>
         
@@ -1178,7 +1181,10 @@ const RealMapVisualizer = () => {
       {(isRunning || status === 'success') && (
         <div 
           className={`absolute top-4 z-[1001] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 max-w-xs transition-all duration-300`}
-          style={isShortsMode ? { left: 'calc(50% - (window.innerHeight * 9/16 / 2))', transform: 'none' } : { left: '1rem' }}
+          style={isShortsMode ? { 
+            left: 'calc(50vw - ((100vh - 125px) * 9/16 / 2) + 12px)', 
+            transform: 'none' 
+          } : { left: '1rem' }}
         >
           <h2 className="text-xl font-bold mb-2 text-cyan-400">Path Finder</h2>
           <div className="p-2 bg-gray-800 rounded border border-cyan-500 mb-3">
