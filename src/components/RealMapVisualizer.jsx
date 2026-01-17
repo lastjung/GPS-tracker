@@ -946,7 +946,7 @@ const RealMapVisualizer = () => {
 
       {/* Control Panel - Hidden during running/recording/countdown, visible in idle and success */}
       {!recordMode && !isRunning && !countdown && !isRecording && (
-      <div className="absolute top-4 left-4 z-[1000] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 max-w-xs">
+      <div className={`absolute top-4 ${isShortsMode ? 'left-1/2 -translate-x-1/2' : 'left-4'} z-[1000] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 max-w-xs transition-all duration-300`}>
         <h2 className="text-xl font-bold mb-1 text-cyan-400">Path Finder</h2>
         
         {/* Hidden during running */}
@@ -1140,6 +1140,14 @@ const RealMapVisualizer = () => {
               Roads: {graph.ways.length}
             </div>
             
+            {/* Resize Hint for Shorts Mode */}
+            {isShortsMode && (
+              <p className="text-[10px] text-purple-200/90 mb-2 leading-tight bg-purple-900/60 p-1.5 rounded border border-purple-400/30">
+                💡 **창이 더 안 줄어들면?** 창의 **높이**를 줄여보세요. 
+                비율에 맞춰 너비도 함께 좁아집니다.
+              </p>
+            )}
+
             {/* Record Button */}
             <button
               onClick={isRecording ? stopRecording : startRecording}
@@ -1164,7 +1172,7 @@ const RealMapVisualizer = () => {
       
       {/* Stats Overlay - Left side during running (same as control panel position) */}
       {(isRunning || status === 'success') && (
-        <div className="absolute top-4 left-4 z-[1001] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 max-w-xs">
+        <div className={`absolute top-4 ${isShortsMode ? 'left-1/2 -translate-x-1/2' : 'left-4'} z-[1001] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 max-w-xs transition-all duration-300`}>
           <h2 className="text-xl font-bold mb-2 text-cyan-400">Path Finder</h2>
           <div className="p-2 bg-gray-800 rounded border border-cyan-500 mb-3">
             <div className="text-lg font-bold text-yellow-400">{ALGORITHMS[algorithm].name}</div>
