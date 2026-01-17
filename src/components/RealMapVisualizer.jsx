@@ -2,6 +2,88 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { MapContainer, TileLayer, Polyline, CircleMarker, Rectangle, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
+// Sound effects using Web Audio API
+const audioContextRef = { current: null };
+
+const getAudioContext = () => {
+  if (!audioContextRef.current) {
+    audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  return audioContextRef.current;
+};
+
+// Play a beep sound for countdown (cheerful, short)
+const playBeep = (frequency = 880, duration = 0.15) => {
+  try {
+    const ctx = getAudioContext();
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(frequency, ctx.currentTime);
+    
+    gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
+    
+    oscillator.start(ctx.currentTime);
+    oscillator.stop(ctx.currentTime + duration);
+  } catch (e) {
+    console.log('Audio not supported');
+  }
+};
+
+// Play success sound (ascending chime)
+const playSuccess = () => {
+  try {
+    const ctx = getAudioContext();
+    const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+    
+    notes.forEach((freq, i) => {
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.12);
+      
+      gainNode.gain.setValueAtTime(0, ctx.currentTime + i * 0.12);
+      gainNode.gain.linearRampToValueAtTime(0.25, ctx.currentTime + i * 0.12 + 0.05);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.12 + 0.3);
+      
+      oscillator.start(ctx.currentTime + i * 0.12);
+      oscillator.stop(ctx.currentTime + i * 0.12 + 0.35);
+    });
+  } catch (e) {
+    console.log('Audio not supported');
+  }
+};
+
+// Play subtle tick during searching (soft click)
+const playSearchTick = () => {
+  try {
+    const ctx = getAudioContext();
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(1200 + Math.random() * 400, ctx.currentTime);
+    
+    gainNode.gain.setValueAtTime(0.05, ctx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.03);
+    
+    oscillator.start(ctx.currentTime);
+    oscillator.stop(ctx.currentTime + 0.03);
+  } catch (e) {}
+};
+
 // Fetch road network from OSM Overpass API
 const fetchRoadNetwork = async (bounds) => {
   const servers = [
@@ -374,16 +456,24 @@ const RealMapVisualizer = () => {
   const [algorithm, setAlgorithm] = useState('astar');
   const [status, setStatus] = useState('idle');
   const [stats, setStats] = useState({ edges: 0, time: 0, distance: 0 });
-  const [density, setDensity] = useState(6); // Default density increased to 6
+  const [density, setDensity] = useState(1); // Show all edges by default
   const [showVisualization, setShowVisualization] = useState(true); // New toggle state
   const [processingDots, setProcessingDots] = useState('');
   const [displayMode, setDisplayMode] = useState('Visualize');
   const [isMapLocked, setIsMapLocked] = useState(true); // Locked by default as requested
+  const [delayedStart, setDelayedStart] = useState(false); // 3-second delay before start (disabled)
+  const [countdown, setCountdown] = useState(null); // Countdown display
+  const [recordMode, setRecordMode] = useState(false); // Vertical recording mode
+  const [isRecording, setIsRecording] = useState(false); // Recording state
   
   // Refs for tracking animation and intervals
   const animationRef = useRef(null);
   const dotsIntervalRef = useRef(null);
   const startTimeRef = useRef(null);
+  const recordContainerRef = useRef(null); // Ref for recording area
+  const mediaRecorderRef = useRef(null);
+  const recordedChunksRef = useRef([]);
+  const pendingStreamRef = useRef(null); // Store stream until countdown finishes
   
   // Map flyTo logic when city changes
   const ChangeView = ({ center, isMapLocked }) => {
@@ -484,6 +574,12 @@ const RealMapVisualizer = () => {
       return;
     }
     
+    // If delayed start is enabled, show countdown first
+    if (delayedStart && countdown === null) {
+      setCountdown(3);
+      return;
+    }
+    
     setIsRunning(true);
     setStatus('running');
     setVisitedEdges([]);
@@ -519,12 +615,20 @@ const RealMapVisualizer = () => {
         setFinalPath(result.path);
         setStats({ edges: result.visitedEdges.length, time: elapsed, distance: distance * 1000 });
         setStatus('success');
+        playSuccess();
       } else {
         setStatus('no_path');
       }
       setIsRunning(false);
       clearInterval(dotsIntervalRef.current);
       setProcessingDots('');
+      
+      // Auto stop recording if active
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        setTimeout(() => {
+          mediaRecorderRef.current.stop();
+        }, 1500); // Wait 1.5s to capture final result
+      }
       return;
     }
 
@@ -562,6 +666,9 @@ const RealMapVisualizer = () => {
         setVisitedEdges(filteredEdges); // Removed .slice(-1000) to keep ALL edges
         setStats(prev => ({ ...prev, edges: allEdges.length }));
         
+        // Play subtle tick every ~10 frames
+        if (allEdges.length % 50 === 0) playSearchTick();
+        
         // Lower delay means faster visualization
         const delay = Math.max(1, 41 - speed); 
         animationRef.current = setTimeout(step, delay);
@@ -577,25 +684,188 @@ const RealMapVisualizer = () => {
         setFinalPath(lastValue.path);
         setStats({ edges: lastValue.visitedEdges.length, time: elapsed, distance: distance * 1000 });
         setStatus('success');
+        playSuccess();
         setIsRunning(false);
+        // Auto stop recording if active
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          setTimeout(() => mediaRecorderRef.current.stop(), 1500);
+        }
       } else {
         clearInterval(dotsIntervalRef.current);
         setProcessingDots('');
         setStatus('no_path');
         setIsRunning(false);
+        // Auto stop recording if active
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          setTimeout(() => mediaRecorderRef.current.stop(), 1500);
+        }
       }
     };
     
     startTimeRef.current = Date.now();
     setStatus('running');
     step();
-  }, [start, end, graph, speed, algorithm, density, showVisualization]);
+  }, [start, end, graph, speed, algorithm, density, showVisualization, delayedStart, countdown]);
+
+  // Countdown effect
+  useEffect(() => {
+    if (countdown === null) return;
+    
+    if (countdown > 0) {
+      playBeep(880 + (3 - countdown) * 220); // Higher pitch as countdown goes down
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
+    } else {
+      // Countdown finished, start the algorithm
+      setCountdown(null);
+      // Re-call runAlgorithm which will now proceed since countdown is null
+      setTimeout(() => {
+        // Start recording now if stream is pending
+        if (pendingStreamRef.current) {
+          const stream = pendingStreamRef.current;
+          mediaRecorderRef.current = new MediaRecorder(stream, {
+            mimeType: 'video/webm;codecs=vp9',
+            videoBitsPerSecond: 5000000
+          });
+          
+          mediaRecorderRef.current.ondataavailable = (e) => {
+            if (e.data.size > 0) {
+              recordedChunksRef.current.push(e.data);
+            }
+          };
+          
+          mediaRecorderRef.current.onstop = () => {
+            stream.getTracks().forEach(track => track.stop());
+            const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `gps-tracker-${Date.now()}.webm`;
+            a.click();
+            URL.revokeObjectURL(url);
+            setIsRecording(false);
+            pendingStreamRef.current = null;
+          };
+          
+          mediaRecorderRef.current.start();
+          setIsRecording(true);
+        }
+        
+        setIsRunning(true);
+        setStatus('running');
+        setVisitedEdges([]);
+        setFinalPath([]);
+        
+        const startId = findNearestNode(graph.nodes, start.lat, start.lng);
+        const endId = findNearestNode(graph.nodes, end.lat, end.lng);
+        
+        const gen = ALGORITHMS[algorithm].fn(graph.nodes, graph.edges, startId, endId);
+        
+        let dotCount = 0;
+        dotsIntervalRef.current = setInterval(() => {
+          dotCount = (dotCount + 1) % 4;
+          setProcessingDots('.'.repeat(dotCount));
+        }, 300);
+        
+        startTimeRef.current = Date.now();
+        
+        const step = () => {
+          let iterations = 0;
+          let lastValue = null;
+          const stepsPerTick = speed <= 10 ? 20 : speed <= 25 ? 50 : 120;
+          
+          while (iterations < stepsPerTick) {
+            const { value, done } = gen.next();
+            if (done || !value) {
+              if (!lastValue) {
+                setIsRunning(false);
+                if (dotsIntervalRef.current) clearInterval(dotsIntervalRef.current);
+                return;
+              }
+              break;
+            }
+            lastValue = value;
+            if (value.type === 'found' || value.type === 'not_found') break;
+            iterations++;
+          }
+          
+          if (lastValue.type === 'visiting') {
+            const allEdges = lastValue.visitedEdges;
+            const filteredEdges = density === 1 ? allEdges : allEdges.filter((_, i) => i % density === 0);
+            setVisitedEdges(filteredEdges);
+            setStats(prev => ({ ...prev, edges: allEdges.length }));
+            
+            // Play subtle tick every ~50 edges
+            if (allEdges.length % 50 === 0) playSearchTick();
+            
+            const delay = Math.max(1, 41 - speed);
+            animationRef.current = setTimeout(step, delay);
+          } else if (lastValue.type === 'found') {
+            clearInterval(dotsIntervalRef.current);
+            setProcessingDots('');
+            const elapsed = Date.now() - startTimeRef.current;
+            let distance = 0;
+            for (let i = 0; i < lastValue.path.length - 1; i++) {
+              distance += haversine(lastValue.path[i][0], lastValue.path[i][1], lastValue.path[i+1][0], lastValue.path[i+1][1]);
+            }
+            setVisitedEdges(lastValue.visitedEdges);
+            setFinalPath(lastValue.path);
+            setStats({ edges: lastValue.visitedEdges.length, time: elapsed, distance: distance * 1000 });
+            setStatus('success');
+            playSuccess();
+            setIsRunning(false);
+            // Auto stop recording if active
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+              setTimeout(() => mediaRecorderRef.current.stop(), 1500);
+            }
+          } else {
+            clearInterval(dotsIntervalRef.current);
+            setProcessingDots('');
+            setStatus('no_path');
+            setIsRunning(false);
+            // Auto stop recording if active
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+              setTimeout(() => mediaRecorderRef.current.stop(), 1500);
+            }
+          }
+        };
+        
+        if (!showVisualization) {
+          let result = null;
+          for (const val of gen) {
+            result = val;
+            if (val.type === 'found' || val.type === 'not_found') break;
+          }
+          if (result && result.type === 'found') {
+            const elapsed = Date.now() - startTimeRef.current;
+            let distance = 0;
+            for (let i = 0; i < result.path.length - 1; i++) {
+              distance += haversine(result.path[i][0], result.path[i][1], result.path[i+1][0], result.path[i+1][1]);
+            }
+            setVisitedEdges(result.visitedEdges);
+            setFinalPath(result.path);
+            setStats({ edges: result.visitedEdges.length, time: elapsed, distance: distance * 1000 });
+            setStatus('success');
+            playSuccess();
+          } else {
+            setStatus('no_path');
+          }
+          setIsRunning(false);
+          clearInterval(dotsIntervalRef.current);
+          setProcessingDots('');
+        } else {
+          step();
+        }
+      }, 100);
+    }
+  }, [countdown, graph, start, end, algorithm, speed, density, showVisualization]);
   
   const stopAlgorithm = useCallback(() => {
     if (animationRef.current) clearTimeout(animationRef.current);
     if (dotsIntervalRef.current) clearInterval(dotsIntervalRef.current);
     setProcessingDots('');
     setIsRunning(false);
+    setCountdown(null);
   }, []);
   
   const resetAll = useCallback(() => {
@@ -607,141 +877,178 @@ const RealMapVisualizer = () => {
     setStatus('idle');
     setStats({ edges: 0, time: 0, distance: 0 });
     setProcessingDots('');
+    setCountdown(null);
   }, [stopAlgorithm, city.start, city.end]);
+
+  // Start recording with screen capture
+  const startRecording = useCallback(async () => {
+    try {
+      // Request screen capture
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { mediaSource: 'screen' },
+        audio: true
+      });
+      
+      // Store stream for later - recording will start after countdown
+      pendingStreamRef.current = stream;
+      recordedChunksRef.current = [];
+      
+      // Start countdown (recording will start when countdown finishes)
+      setCountdown(3);
+      
+    } catch (err) {
+      console.error('Failed to start recording:', err);
+    }
+  }, []);
+
+  // Stop recording  
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecording(false);
+  }, []);
   
   return (
     <div className="relative w-full h-screen">
-      {/* Control Panel */}
+      {/* Control Panel - Hidden during running/recording/success */}
+      {!recordMode && !isRunning && !countdown && !isRecording && status !== 'success' && (
       <div className="absolute top-4 left-4 z-[1000] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 max-w-xs">
         <h2 className="text-xl font-bold mb-1 text-cyan-400">Path Finder</h2>
         
-        {/* City Selector */}
-        <div className="flex flex-col gap-1 mb-3">
-          <label className="text-xs text-gray-400">City: <span className="text-cyan-300 font-bold">{city.name}</span></label>
-          <select
-            value={cityKey}
-            onChange={(e) => handleCityChange(e.target.value)}
-            disabled={isRunning}
-            className="bg-gray-700 text-white px-3 py-2 rounded w-full border border-gray-600 focus:border-cyan-500 outline-none"
-          >
-            {Object.entries(CITIES).map(([key, c]) => (
-              <option key={key} value={key}>{c.name}</option>
-            ))}
-          </select>
-        </div>
+        {/* Hidden during running */}
+        {!isRunning && !countdown && (
+          <>
+            {/* City Selector */}
+            <div className="flex flex-col gap-1 mb-3">
+              <label className="text-xs text-gray-400">City: <span className="text-cyan-300 font-bold">{city.name}</span></label>
+              <select
+                value={cityKey}
+                onChange={(e) => handleCityChange(e.target.value)}
+                disabled={isRunning}
+                className="bg-gray-700 text-white px-3 py-2 rounded w-full border border-gray-600 focus:border-cyan-500 outline-none"
+              >
+                {Object.entries(CITIES).map(([key, c]) => (
+                  <option key={key} value={key}>{c.name}</option>
+                ))}
+              </select>
+            </div>
 
-        {/* Mode Toggle (Placeholder) */}
-        <div className="flex flex-col gap-1 mb-3">
-          <label className="text-xs text-gray-400">Mode</label>
-          <div className="flex bg-gray-800 rounded p-1 border border-gray-700">
-            <button 
-              className={`flex-1 text-[10px] py-1 rounded ${displayMode === 'Visualize' ? 'bg-cyan-600' : 'hover:bg-gray-700'}`}
-              onClick={() => setDisplayMode('Visualize')}
-            >Visualize</button>
-            <button 
-              className={`flex-1 text-[10px] py-1 rounded ${displayMode === 'Route' ? 'bg-cyan-600' : 'hover:bg-gray-700'}`}
-              onClick={() => setDisplayMode('Route')}
-            >Route</button>
-          </div>
-        </div>
+            {/* Mode Toggle (Placeholder) */}
+            <div className="flex flex-col gap-1 mb-3">
+              <label className="text-xs text-gray-400">Mode</label>
+              <div className="flex bg-gray-800 rounded p-1 border border-gray-700">
+                <button 
+                  className={`flex-1 text-[10px] py-1 rounded ${displayMode === 'Visualize' ? 'bg-cyan-600' : 'hover:bg-gray-700'}`}
+                  onClick={() => setDisplayMode('Visualize')}
+                >Visualize</button>
+                <button 
+                  className={`flex-1 text-[10px] py-1 rounded ${displayMode === 'Route' ? 'bg-cyan-600' : 'hover:bg-gray-700'}`}
+                  onClick={() => setDisplayMode('Route')}
+                >Route</button>
+              </div>
+            </div>
+          </>
+        )}
 
-        {/* Current Algorithm Display */}
+        {/* Current Algorithm Display - Always visible */}
         <div className="mb-3 p-2 bg-gray-800 rounded border border-cyan-500">
           <div className="text-lg font-bold text-yellow-400">{ALGORITHMS[algorithm].name}</div>
-          <div className="text-xs text-gray-400">{ALGORITHMS[algorithm].description}</div>
+          {!isRunning && <div className="text-xs text-gray-400">{ALGORITHMS[algorithm].description}</div>}
         </div>
         
-        <p className="text-xs text-gray-400 mb-3">
-          {!start ? '1st click: Set START' : !end ? '2nd click: Set END' : 'Click map to reset'}
-        </p>
-        
-        {/* Algorithm Selector */}
-        <div className="flex flex-col gap-1 mb-3">
-          <label className="text-xs text-gray-400">Algorithm</label>
-          <select
-            value={algorithm}
-            onChange={(e) => setAlgorithm(e.target.value)}
-            disabled={isRunning}
-            className="bg-gray-700 text-white px-3 py-2 rounded w-full"
-          >
-            {Object.entries(ALGORITHMS).map(([key, { name }]) => (
-              <option key={key} value={key}>{name}</option>
-            ))}
-          </select>
-        </div>
-        
-        <div className="flex flex-col gap-2 mb-3">
-          <label className="text-xs text-gray-400">
-            Speed: {speed} {speed <= 10 ? '(Slow)' : speed >= 40 ? '(Fast)' : ''}
-          </label>
-          <input
-            type="range"
-            min="1"
-            max="50"
-            value={speed}
-            onChange={(e) => setSpeed(Number(e.target.value))}
-            className="w-full accent-cyan-500"
-          />
-        </div>
+        {/* Hidden during running */}
+        {!isRunning && !countdown && (
+          <>
+            <p className="text-xs text-gray-400 mb-3">
+              {!start ? '1st click: Set START' : !end ? '2nd click: Set END' : 'Click map to reset'}
+            </p>
+            
+            {/* Algorithm Selector */}
+            <div className="flex flex-col gap-1 mb-3">
+              <label className="text-xs text-gray-400">Algorithm</label>
+              <select
+                value={algorithm}
+                onChange={(e) => setAlgorithm(e.target.value)}
+                disabled={isRunning}
+                className="bg-gray-700 text-white px-3 py-2 rounded w-full"
+              >
+                {Object.entries(ALGORITHMS).map(([key, { name }]) => (
+                  <option key={key} value={key}>{name}</option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="flex flex-col gap-2 mb-3">
+              <label className="text-xs text-gray-400">
+                Speed: {speed} {speed <= 10 ? '(Slow)' : speed >= 40 ? '(Fast)' : ''}
+              </label>
+              <input
+                type="range"
+                min="1"
+                max="50"
+                value={speed}
+                onChange={(e) => setSpeed(Number(e.target.value))}
+                className="w-full accent-cyan-500"
+              />
+            </div>
 
-        {/* Visualization & View Controls */}
-        <div className="flex flex-col gap-2 mb-3 bg-gray-800/50 p-2 rounded border border-gray-700">
-          <div className="flex items-center gap-2">
-            <input 
-              type="checkbox" 
-              id="vizToggle"
-              checked={showVisualization} 
-              onChange={(e) => setShowVisualization(e.target.checked)}
-              disabled={isRunning}
-              className="w-4 h-4 rounded accent-cyan-500"
-            />
-            <label htmlFor="vizToggle" className="text-xs text-gray-300 cursor-pointer">Show Steps</label>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <input 
-              type="checkbox" 
-              id="lockToggle"
-              checked={isMapLocked} 
-              onChange={(e) => setIsMapLocked(e.target.checked)}
-              className="w-4 h-4 rounded accent-orange-500"
-            />
-            <label htmlFor="lockToggle" className="text-xs text-orange-300 font-bold cursor-pointer">Lock Map View</label>
-          </div>
-        </div>
+            {/* Visualization & View Controls */}
+            <div className="flex flex-col gap-2 mb-3 bg-gray-800/50 p-2 rounded border border-gray-700">
+              <div className="flex items-center gap-2">
+                <input 
+                  type="checkbox" 
+                  id="vizToggle"
+                  checked={showVisualization} 
+                  onChange={(e) => setShowVisualization(e.target.checked)}
+                  disabled={isRunning}
+                  className="w-4 h-4 rounded accent-cyan-500"
+                />
+                <label htmlFor="vizToggle" className="text-xs text-gray-300 cursor-pointer">Show Steps</label>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <input 
+                  type="checkbox" 
+                  id="lockToggle"
+                  checked={isMapLocked} 
+                  onChange={(e) => setIsMapLocked(e.target.checked)}
+                  className="w-4 h-4 rounded accent-orange-500"
+                />
+                <label htmlFor="lockToggle" className="text-xs text-orange-300 font-bold cursor-pointer">Lock Map View</label>
+              </div>
+            </div>
+            
+            {/* Density Slider */}
+            <div className="flex flex-col gap-2 mb-3">
+              <label className="text-xs text-gray-400">Path Density: 1/{density}</label>
+              <input
+                type="range"
+                min="1"
+                max="10"
+                value={density}
+                onChange={(e) => setDensity(Number(e.target.value))}
+                disabled={isRunning}
+                className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+              />
+            </div>
+          </>
+        )}
         
-        {/* Density Slider */}
-        <div className="flex flex-col gap-2 mb-3">
-          <label className="text-xs text-gray-400">Path Density: 1/{density}</label>
-          <input
-            type="range"
-            min="1"
-            max="10"
-            value={density}
-            onChange={(e) => setDensity(Number(e.target.value))}
-            disabled={isRunning}
-            className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-          />
-        </div>
-        
-        <div className="flex gap-2">
-          {!isRunning ? (
+        {/* Buttons - Only show when not running */}
+        {!isRunning && !countdown && (
+          <div className="flex gap-2">
             <button
               onClick={runAlgorithm}
-              disabled={!start || !end || isLoading}
+              disabled={!start || !end || isLoading || countdown !== null}
               className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 text-white rounded font-bold flex-1"
             >▶ Start</button>
-          ) : (
             <button
-              onClick={stopAlgorithm}
-              className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded font-bold flex-1"
-            >■ Stop</button>
-          )}
-          <button
-            onClick={resetAll}
-            className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded"
-          >Reset</button>
-        </div>
+              onClick={resetAll}
+              className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded"
+            >Reset</button>
+          </div>
+        )}
         
         <div className="mt-3">
           {isLoading && graph.ways.length === 0 && (
@@ -752,20 +1059,20 @@ const RealMapVisualizer = () => {
               Calculating{processingDots}
             </p>
           )}
-          {status === 'success' && <p className="text-orange-500 text-2xl font-black success-flash italic tracking-tighter">🏁 Path found!</p>}
+          {status === 'success' && <p className="text-green-400 text-sm font-medium">✓ Complete</p>}
           {status === 'no_path' && <p className="text-red-400 text-sm">❌ No connected path found.</p>}
           {status === 'click_too_far' && <p className="text-orange-400 text-sm">⚠️ Too far from road. Click on blue lines!</p>}
           {status === 'error_loading' && <p className="text-red-500 text-sm">❌ Loading failed. Please retry.</p>}
           {!isLoading && graph.ways.length === 0 && <p className="text-orange-400 text-sm">⚠️ No road data in this area.</p>}
         </div>
         
-        {/* Stats Panel */}
+        {/* Stats Panel - Always show when running or success */}
         {(status === 'success' || status === 'running') && (
           <div className="mt-3 p-2 bg-gray-800 rounded text-xs border border-gray-700">
-            <div className="flex justify-between"><span>Edges explored:</span><span className="text-cyan-400 font-bold">{stats.edges}</span></div>
+            <div className="flex justify-between"><span>Roads explored:</span><span className="text-cyan-400 font-bold">{stats.edges}</span></div>
             {status === 'success' && (
               <>
-                <div className="flex justify-between"><span>Time:</span><span className="text-green-400">{stats.time}ms</span></div>
+                <div className="flex justify-between"><span>Time:</span><span className="text-green-400">{(stats.time / 1000).toFixed(1)}s</span></div>
                 <div className="flex justify-between"><span>Distance:</span><span className="text-orange-400 font-bold">{stats.distance.toFixed(0)}m</span></div>
               </>
             )}
@@ -780,14 +1087,55 @@ const RealMapVisualizer = () => {
           >🔄 Try Another Route</button>
         )}
         
-        {/* Click Guide */}
-        <p className="mt-3 text-xs text-blue-300">💡 Click on blue roads only</p>
-        
-        <div className="mt-2 text-xs text-gray-500">
-          Roads: {graph.ways.length}
-        </div>
+        {/* Hidden during running */}
+        {!isRunning && !countdown && (
+          <>
+            {/* Click Guide */}
+            <p className="mt-3 text-xs text-blue-300">💡 Click on blue roads only</p>
+            
+            <div className="mt-2 text-xs text-gray-500">
+              Roads: {graph.ways.length}
+            </div>
+            
+            {/* Record Button */}
+            <button
+              onClick={isRecording ? stopRecording : startRecording}
+              disabled={(isRunning || isLoading || countdown !== null) && !isRecording}
+              className={`mt-3 w-full px-3 py-2 text-sm font-bold rounded ${countdown !== null ? 'bg-yellow-500' : isRecording ? 'bg-red-600 hover:bg-red-500 animate-pulse' : 'bg-purple-600 hover:bg-purple-500'} text-white disabled:bg-gray-600`}
+            >
+              {countdown !== null ? `⏳ ${countdown}` : isRecording ? '⏹️ Stop Recording' : '🎬 Record & Start'}
+            </button>
+          </>
+        )}
       </div>
+      )}
       
+      {/* Countdown Overlay - Large center display */}
+      {countdown !== null && (
+        <div className="absolute inset-0 z-[1001] flex items-center justify-center pointer-events-none">
+          <div className="text-9xl font-black text-yellow-400 drop-shadow-2xl animate-pulse">
+            {countdown}
+          </div>
+        </div>
+      )}
+      
+      {/* Stats Overlay - Left side during running (same as control panel position) */}
+      {(isRunning || status === 'success') && (
+        <div className="absolute top-4 left-4 z-[1001] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 max-w-xs">
+          <h2 className="text-xl font-bold mb-2 text-cyan-400">Path Finder</h2>
+          <div className="p-2 bg-gray-800 rounded border border-cyan-500 mb-3">
+            <div className="text-lg font-bold text-yellow-400">{ALGORITHMS[algorithm].name}</div>
+          </div>
+          <div className="p-2 bg-gray-800 rounded text-sm border border-gray-700 space-y-1">
+            <div className="flex justify-between"><span>Roads explored:</span><span className="text-cyan-400 font-bold">{stats.edges}</span></div>
+            <div className="flex justify-between"><span>Time:</span><span className="text-green-400">{((stats.time || 0) / 1000).toFixed(1)}s</span></div>
+            <div className="flex justify-between"><span>Distance:</span><span className="text-orange-400 font-bold">{(stats.distance || 0).toFixed(0)}m</span></div>
+          </div>
+          {status === 'success' && <div className="mt-2 text-green-400 text-sm font-medium text-center">✓ Path found</div>}
+          {status === 'running' && <p className="mt-3 text-cyan-400 text-lg font-mono">Calculating{processingDots}</p>}
+        </div>
+      )}
+
       {/* Map with dimming effect */}
       <MapContainer 
         center={city.center} 
@@ -837,7 +1185,7 @@ const RealMapVisualizer = () => {
             pathOptions={{
               color: '#06b6d4',
               weight: 3,
-              opacity: 0.6,
+              opacity: 0.85,
               className: 'edge-trail'
             }}
           />
