@@ -926,8 +926,8 @@ const RealMapVisualizer = () => {
       {/* Shorts Guide Overlay - 9:16 Letterbox */}
       {isShortsMode && (
         <div className="absolute inset-0 z-[1002] pointer-events-none flex justify-center">
-          {/* Left Shadow */}
-          <div className="h-full bg-black/60 flex-1"></div>
+          {/* Left Shadow - Solid Black for Theater Mode */}
+          <div className="h-full bg-black flex-1"></div>
           
           {/* 9:16 Content Area Shell - Calculated with 125px header crop in mind */}
           <div 
@@ -941,13 +941,13 @@ const RealMapVisualizer = () => {
             <div className="absolute bottom-4 right-4 border-r-2 border-b-2 border-white/50 w-4 h-4"></div>
             
             {/* Label */}
-            <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/50 px-2 py-0.5 rounded text-[10px] text-white/50 font-mono">
-              Shorts Safe Zone (9:16)
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black px-2 py-0.5 rounded text-[10px] text-white/70 font-mono border border-white/20">
+              Shorts Theater Mode (9:16)
             </div>
           </div>
           
-          {/* Right Shadow */}
-          <div className="h-full bg-black/60 flex-1"></div>
+          {/* Right Shadow - Solid Black for Theater Mode */}
+          <div className="h-full bg-black flex-1"></div>
         </div>
       )}
 
