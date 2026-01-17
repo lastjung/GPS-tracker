@@ -3,7 +3,7 @@
   "short_name": "PathFinder",
   "description": "A* algorithm pathfinding visualizer on real maps",
   "start_url": "/GPS-tracker/",
-  "display": "standalone",
+  "display": "fullscreen",
   "background_color": "#111827",
   "theme_color": "#06b6d4",
   "orientation": "any",
