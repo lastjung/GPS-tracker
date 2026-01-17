@@ -911,8 +911,8 @@ const RealMapVisualizer = () => {
   
   return (
     <div className="relative w-full h-screen">
-      {/* Control Panel - Hidden during running/recording/success */}
-      {!recordMode && !isRunning && !countdown && !isRecording && status !== 'success' && (
+      {/* Control Panel - Hidden during running/recording/countdown, visible in idle and success */}
+      {!recordMode && !isRunning && !countdown && !isRecording && (
       <div className="absolute top-4 left-4 z-[1000] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 max-w-xs">
         <h2 className="text-xl font-bold mb-1 text-cyan-400">Path Finder</h2>
         
