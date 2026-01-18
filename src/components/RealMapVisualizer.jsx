@@ -85,7 +85,7 @@ const playSearchTick = () => {
 };
 
 // Fetch road network from OSM Overpass API
-const fetchRoadNetwork = async (bounds) => {
+const fetchRoadNetwork = async (bounds, signal) => {
   const servers = [
     'https://overpass-api.de/api/interpreter',
     'https://lz4.overpass-api.de/api/interpreter',
@@ -129,7 +129,8 @@ const fetchRoadNetwork = async (bounds) => {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded'
           },
-          body: `data=${encodeURIComponent(query)}`
+          body: `data=${encodeURIComponent(query)}`,
+          signal
         });
         if (response.ok) {
           return response.json();
@@ -421,10 +422,10 @@ const CITIES = {
     end: { lat: 43.6426, lng: -79.3871 }    // CN Tower
   },
   newyork: {
-    name: 'New York (Manhattan)',
-    center: [40.7560, -73.9850], // Mid-town centered
-    start: { lat: 40.7100, lng: -74.0100 }, // World Trade Center area (Slightly further north for visibility)
-    end: { lat: 40.8000, lng: -73.9500 }    // Harlem / Central Park North
+    name: 'New York',
+    center: [40.7300, -73.9600], // Slightly shifted focus
+    start: { lat: 40.7710, lng: -73.9890 }, // Near Lincoln Center (South-West shift)
+    end: { lat: 40.6950, lng: -73.9350 }    // Bedford-Stuyvesant (North-East shift)
   },
   tokyo: {
     name: 'Tokyo (Bay View)',
@@ -486,6 +487,11 @@ const RealMapVisualizer = () => {
   const recordedChunksRef = useRef([]);
   const pendingStreamRef = useRef(null); // Store stream until countdown finishes
   const lastFitRef = useRef(0); // Lock for fitToRoute to prevent shaking
+  const cityKeyRef = useRef(cityKey); // Latest city key for async checks
+
+  useEffect(() => {
+    cityKeyRef.current = cityKey;
+  }, [cityKey]);
   
   // Drag state for Menu Panel
   const [menuPanelPos, setMenuPanelPos] = useState(null);
@@ -568,14 +574,16 @@ const RealMapVisualizer = () => {
   };
 
   const handleCityChange = (key) => {
-    stopAlgorithm();
+    stopAlgorithm(); // 2) Stop any running logic/timers immediately
     const newCity = CITIES[key];
     setCityKey(key);
-    setShowMenu(true); // Always show menu on city change
+    setShowMenu(true); 
     setStart(newCity.start);
     setEnd(newCity.end);
     setBounds(boundsFromPoints(newCity.start, newCity.end, 0.01));
-    setGraph({ nodes: {}, edges: {}, ways: [] }); // Clear old graph
+    
+    // 3) Clear all visual and data states immediately
+    setGraph({ nodes: {}, edges: {}, ways: [] }); 
     setVisitedEdges([]);
     setFinalPath([]);
     setStatus('idle');
@@ -587,29 +595,40 @@ const RealMapVisualizer = () => {
     if (!bounds) return; // Allow loading even if locked to get initial data
     
     // Prevent reloading if graph is already loaded for this area
-    if (graph.ways.length > 0 && Object.keys(graph.nodes).length > 0) {
-       setIsLoading(false); 
-       return;
-    }
+    const controller = new AbortController();
 
     const load = async () => {
+      const requestCity = cityKey; 
       setIsLoading(true);
       try {
-        const data = await fetchRoadNetwork(bounds);
+        const data = await fetchRoadNetwork(bounds, controller.signal);
+        
+        // Final sanity check: if the city changed, discard data
+        if (cityKeyRef.current !== requestCity) {
+           console.log(`Discarding stale data for ${requestCity}`);
+           return;
+        }
+
         const graphData = buildGraph(data);
         setGraph(graphData);
         if (status === 'error_loading') setStatus('idle');
       } catch (err) {
+        if (err.name === 'AbortError') return;
         console.error('Failed to load roads:', err);
         setStatus('error_loading');
       } finally {
-        setIsLoading(false);
+        if (cityKeyRef.current === requestCity) {
+          setIsLoading(false);
+        }
       }
     };
     
     const timeout = setTimeout(load, 400); 
-    return () => clearTimeout(timeout);
-  }, [bounds, graph.ways.length]);
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [bounds, cityKey, graph.ways.length]);
 
   // Combined score update logic
   const updateRealTimeStats = useCallback((visitedEdges, currentDistance) => {
@@ -1317,7 +1336,9 @@ const RealMapVisualizer = () => {
           {status === 'no_path' && <p className="text-red-400 text-sm">❌ No connected path found.</p>}
           {status === 'click_too_far' && <p className="text-orange-400 text-sm">⚠️ Too far from road. Click on blue lines!</p>}
           {status === 'error_loading' && <p className="text-red-500 text-sm">❌ Loading failed. Please retry.</p>}
-          {!isLoading && graph.ways.length === 0 && <p className="text-orange-400 text-sm">⚠️ No road data in this area.</p>}
+          {!isLoading && status !== 'error_loading' && graph.ways.length === 0 && (
+            <p className="text-orange-400 text-sm">⚠️ No road data in this area.</p>
+          )}
         </div>
         
         {/* Stats Panel - Always show when running or success */}
@@ -1394,15 +1415,16 @@ const RealMapVisualizer = () => {
         </div>
         <div className="p-2 bg-gray-800 rounded text-sm border border-gray-700 space-y-1">
           <div className="flex justify-between"><span>Roads explored:</span><span className="text-cyan-400 font-bold">{stats.edges}</span></div>
-          <div className="flex justify-between"><span>Time:</span><span className="text-green-400">{((stats.time || 0) / 1000).toFixed(1)}s</span></div>
+          <div className="flex justify-between"><span>Time:</span><span className="text-green-400">{((stats.time || 0) / 1000).toFixed(3)}s</span></div>
           <div className="flex justify-between"><span>Distance:</span><span className="text-orange-400 font-bold">{(stats.distance || 0).toFixed(0)}m</span></div>
         </div>
         {status === 'success' && <div className="mt-2 text-green-400 text-sm font-medium text-center">✓ Path found</div>}
         {status === 'running' && <p className="mt-3 text-cyan-400 text-lg font-mono">Calculating{processingDots}</p>}
       </div>
 
-      {/* Map with dimming effect */}
+      {/* Map with dimming effect - Key ensures total re-render on city change */}
       <MapContainer 
+        key={cityKey}
         center={city.center} 
         zoom={13} 
         zoomControl={false}
