@@ -370,36 +370,44 @@ const RoadLoader = ({ setBounds, isMapLocked }) => {
 };
 
 // Map click handler that snaps to nearest road (auto-toggle)
-const MapClickHandler = ({ graph, start, end, setStart, setEnd, setVisitedEdges, setFinalPath, setStatus, isRunning }) => {
+const MapClickHandler = ({ graph, start, end, setStart, setEnd, setVisitedEdges, setFinalPath, setStatus, isRunning, showMenu, setShowMenu }) => {
   useMapEvents({
-    click: (e) => {
-      if (isRunning || Object.keys(graph.nodes).length === 0) return;
-      
-      const snapped = findNearestNodeCoords(graph.nodes, e.latlng.lat, e.latlng.lng);
-      if (!snapped) {
-        setStatus('click_too_far');
-        setTimeout(() => setStatus('idle'), 2000);
-        return;
+      click: (e) => {
+        if (isRunning) return;
+        
+        // Show menu if hidden
+        if (!showMenu) {
+          setShowMenu(true);
+          return;
+        }
+
+        if (Object.keys(graph.nodes).length === 0) return;
+        
+        const snapped = findNearestNodeCoords(graph.nodes, e.latlng.lat, e.latlng.lng);
+        if (!snapped) {
+          setStatus('click_too_far');
+          setTimeout(() => setStatus('idle'), 2000);
+          return;
+        }
+        
+        setStatus('idle');
+        // Auto-toggle: if no start → set start, if start but no end → set end, else reset
+        if (!start) {
+          setStart(snapped);
+          setVisitedEdges([]);
+          setFinalPath([]);
+        } else if (!end) {
+          setEnd(snapped);
+          setVisitedEdges([]);
+          setFinalPath([]);
+        } else {
+          // Reset and set new start
+          setStart(snapped);
+          setEnd(null);
+          setVisitedEdges([]);
+          setFinalPath([]);
+        }
       }
-      
-      setStatus('idle');
-      // Auto-toggle: if no start → set start, if start but no end → set end, else reset
-      if (!start) {
-        setStart(snapped);
-        setVisitedEdges([]);
-        setFinalPath([]);
-      } else if (!end) {
-        setEnd(snapped);
-        setVisitedEdges([]);
-        setFinalPath([]);
-      } else {
-        // Reset and set new start
-        setStart(snapped);
-        setEnd(null);
-        setVisitedEdges([]);
-        setFinalPath([]);
-      }
-    }
   });
   return null;
 };
@@ -465,7 +473,9 @@ const RealMapVisualizer = () => {
   const [delayedStart, setDelayedStart] = useState(false); // 3-second delay before start (disabled)
   const [countdown, setCountdown] = useState(null); // Countdown display
   const [recordMode, setRecordMode] = useState(false); // Vertical recording mode
+
   const [isRecording, setIsRecording] = useState(false); // Recording state
+  const [showMenu, setShowMenu] = useState(true); // Toggle for Menu Panel visibility
   
   // Refs for tracking animation and intervals
   const animationRef = useRef(null);
@@ -561,6 +571,7 @@ const RealMapVisualizer = () => {
     stopAlgorithm();
     const newCity = CITIES[key];
     setCityKey(key);
+    setShowMenu(true); // Always show menu on city change
     setStart(newCity.start);
     setEnd(newCity.end);
     setBounds(boundsFromPoints(newCity.start, newCity.end, 0.01));
@@ -621,7 +632,7 @@ const RealMapVisualizer = () => {
       return;
     }
     
-    // If delayed start is enabled, show countdown first
+    // Only use countdown if explicitly requested (e.g. for recording)
     if (delayedStart && countdown === null) {
       setCountdown(3);
       return;
@@ -631,6 +642,7 @@ const RealMapVisualizer = () => {
     setStatus('running');
     setVisitedEdges([]);
     setFinalPath([]);
+    setShowMenu(false); // Hide menu while running and keep hidden after finish
     
     const gen = ALGORITHMS[algorithm].fn(graph.nodes, graph.edges, startId, endId);
     let totalSteps = 0;
@@ -950,6 +962,7 @@ const RealMapVisualizer = () => {
     stopAlgorithm();
     setStart(city.start);
     setEnd(city.end);
+    setShowMenu(true); // Restore menu on reset
     setVisitedEdges([]);
     setFinalPath([]);
     setStatus('idle');
@@ -964,9 +977,12 @@ const RealMapVisualizer = () => {
   const startRecording = useCallback(async () => {
     try {
       // Request screen capture
+      // Request screen capture with options to include current tab
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { mediaSource: 'screen' },
-        audio: true
+        video: true, // Allow user to choose Screen, Window, or Tab
+        audio: true,
+        selfBrowserSurface: 'include', // Allow current tab to be selected
+        systemAudio: 'include' 
       });
       
       // Store stream for later - recording will start after countdown
@@ -1097,7 +1113,7 @@ const RealMapVisualizer = () => {
       )}
 
       {/* Control Panel - Hidden during running/recording/countdown, visible in idle and success */}
-      {!recordMode && !isRunning && !countdown && !isRecording && (
+      {!recordMode && !isRunning && !countdown && !isRecording && showMenu && (
       <div 
         className={`draggable-panel absolute top-4 z-[1000] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 max-w-xs transition-all duration-300 ${isDraggingMenu ? 'cursor-grabbing' : ''}`}
         style={menuPanelPos || (isShortsMode ? { 
@@ -1385,7 +1401,10 @@ const RealMapVisualizer = () => {
         zoomControl={false}
         className={`w-full h-full ${isRunning ? 'map-dimmed' : 'map-normal'}`}
       >
-        <ZoomControl position="topright" />
+        {/* Hide ZoomControl when running/recording/countdown, match menu behavior */}
+        {!recordMode && !isRunning && !countdown && !isRecording && showMenu && (
+          <ZoomControl position="topright" />
+        )}
         <ChangeView center={city.center} isMapLocked={isMapLocked} isShortsMode={isShortsMode} city={city} />
         <TileLayer
           attribution='&copy; <a href="https://carto.com/">CARTO</a>'
@@ -1402,6 +1421,8 @@ const RealMapVisualizer = () => {
           setFinalPath={setFinalPath}
           setStatus={setStatus}
           isRunning={isRunning}
+          showMenu={showMenu}
+          setShowMenu={setShowMenu}
         />
         
         {/* Boundary Box - Removed for cleaner recording */}
