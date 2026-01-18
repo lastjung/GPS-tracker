@@ -88,10 +88,10 @@ const playSearchTick = () => {
 const fetchRoadNetwork = async (bounds) => {
   const servers = [
     'https://overpass-api.de/api/interpreter',
+    'https://lz4.overpass-api.de/api/interpreter',
+    'https://api.openstreetmap.fr/oapi/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
-    'https://overpass.openstreetmap.ru/api/interpreter',
-    'https://overpass.nchc.org.tw/api/interpreter',
-    'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
+    'https://overpass.openstreetmap.ru/api/interpreter'
   ];
 
   const makeQuery = (b, timeoutSeconds) => `
@@ -115,9 +115,9 @@ const fetchRoadNetwork = async (bounds) => {
   };
 
   const attempts = [
-    { bounds, timeout: 25 },
-    { bounds: shrinkBounds(bounds, 0.7), timeout: 30 },
-    { bounds: shrinkBounds(bounds, 0.5), timeout: 35 }
+    { bounds, timeout: 35 },
+    { bounds: shrinkBounds(bounds, 0.8), timeout: 40 },
+    { bounds: shrinkBounds(bounds, 0.6), timeout: 45 }
   ];
 
   for (const attempt of attempts) {
@@ -476,6 +476,16 @@ const RealMapVisualizer = () => {
   const recordedChunksRef = useRef([]);
   const pendingStreamRef = useRef(null); // Store stream until countdown finishes
   const lastFitRef = useRef(0); // Lock for fitToRoute to prevent shaking
+  
+  // Drag state for Menu Panel
+  const [menuPanelPos, setMenuPanelPos] = useState(null);
+  const [isDraggingMenu, setIsDraggingMenu] = useState(false);
+  const menuDragOffset = useRef({ x: 0, y: 0 });
+
+  // Drag state for Score Panel
+  const [scorePanelPos, setScorePanelPos] = useState(null);
+  const [isDraggingScore, setIsDraggingScore] = useState(false);
+  const scoreDragOffset = useRef({ x: 0, y: 0 });
   
   // Map flyTo logic when city changes - Enhanced to respect Shorts Mode padding
   const ChangeView = ({ center, isMapLocked, isShortsMode, city }) => {
@@ -926,6 +936,8 @@ const RealMapVisualizer = () => {
     setStats({ edges: 0, time: 0, distance: 0 });
     setProcessingDots('');
     setCountdown(null);
+    setMenuPanelPos(null);
+    setScorePanelPos(null);
   }, [stopAlgorithm, city.start, city.end]);
 
   // Start recording with screen capture
@@ -956,6 +968,83 @@ const RealMapVisualizer = () => {
     }
     setIsRecording(false);
   }, []);
+
+  // Menu Drag Handlers
+  const handleMenuPointerDown = (e) => {
+    // Only allow left click
+    if (e.button !== 0) return;
+    e.stopPropagation(); // Prevent map drag
+    
+    const panel = e.currentTarget.closest('.draggable-panel');
+    if (!panel) return;
+
+    const rect = panel.getBoundingClientRect();
+    menuDragOffset.current = {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top
+    };
+    
+    setIsDraggingMenu(true);
+    panel.setPointerCapture(e.pointerId);
+  };
+
+  const handleMenuPointerMove = (e) => {
+    if (!isDraggingMenu) return;
+    e.stopPropagation();
+    
+    setMenuPanelPos({
+      left: `${e.clientX - menuDragOffset.current.x}px`,
+      top: `${e.clientY - menuDragOffset.current.y}px`,
+      bottom: 'auto',
+      right: 'auto',
+      transform: 'none'
+    });
+  };
+
+  const handleMenuPointerUp = (e) => {
+    if (!isDraggingMenu) return;
+    e.stopPropagation();
+    setIsDraggingMenu(false);
+    e.currentTarget.closest('.draggable-panel')?.releasePointerCapture(e.pointerId);
+  };
+
+  // Score Panel Drag Handlers
+  const handleScorePointerDown = (e) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    
+    const panel = e.currentTarget.closest('.draggable-panel');
+    if (!panel) return;
+
+    const rect = panel.getBoundingClientRect();
+    scoreDragOffset.current = {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top
+    };
+    
+    setIsDraggingScore(true);
+    panel.setPointerCapture(e.pointerId);
+  };
+
+  const handleScorePointerMove = (e) => {
+    if (!isDraggingScore) return;
+    e.stopPropagation();
+    
+    setScorePanelPos({
+      left: `${e.clientX - scoreDragOffset.current.x}px`,
+      top: `${e.clientY - scoreDragOffset.current.y}px`,
+      bottom: 'auto',
+      right: 'auto',
+      transform: 'none'
+    });
+  };
+
+  const handleScorePointerUp = (e) => {
+    if (!isDraggingScore) return;
+    e.stopPropagation();
+    setIsDraggingScore(false);
+    e.currentTarget.closest('.draggable-panel')?.releasePointerCapture(e.pointerId);
+  };
   
   return (
     <div className="relative w-full h-screen">
@@ -990,13 +1079,25 @@ const RealMapVisualizer = () => {
       {/* Control Panel - Hidden during running/recording/countdown, visible in idle and success */}
       {!recordMode && !isRunning && !countdown && !isRecording && (
       <div 
-        className={`absolute top-4 z-[1000] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 max-w-xs transition-all duration-300`}
-        style={isShortsMode ? { 
-          left: 'max(1rem, calc(50vw - (100vh * 9/16 / 2) + 12px))', 
+        className={`draggable-panel absolute top-4 z-[1000] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 max-w-xs transition-all duration-300 ${isDraggingMenu ? 'cursor-grabbing' : ''}`}
+        style={menuPanelPos || (isShortsMode ? { 
+          bottom: 'max(1rem, calc(50vh - (100vh * 9/16 / 2) + 12px))', 
+          right: 'max(1rem, calc(50vw - (100vh * 9/16 / 2) + 12px))', 
           transform: 'none' 
-        } : { left: '1rem' }}
+        } : { 
+          bottom: '2rem', 
+          right: '1rem',
+          transform: 'none'
+        })}
+        onPointerMove={handleMenuPointerMove}
+        onPointerUp={handleMenuPointerUp}
       >
-        <h2 className="text-xl font-bold mb-1 text-cyan-400">Path Finder</h2>
+        <h2 
+          className="text-xl font-bold mb-1 text-cyan-400 cursor-grab active:cursor-grabbing select-none"
+          onPointerDown={handleMenuPointerDown}
+        >
+          Path Finder
+        </h2>
         
         {/* Hidden during running */}
         {!isRunning && !countdown && (
@@ -1230,27 +1331,34 @@ const RealMapVisualizer = () => {
       )}
       
       {/* Stats Overlay - Left side during running (same as control panel position) */}
-      {(isRunning || status === 'success') && (
-        <div 
-          className={`absolute top-4 z-[1001] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 max-w-xs transition-all duration-300`}
-          style={isShortsMode ? { 
-            left: 'max(1rem, calc(50vw - (100vh * 9/16 / 2) + 12px))', 
-            transform: 'none' 
-          } : { left: '1rem' }}
+      {/* Stats Overlay - Always visible per user request */}
+      {/* Stats Overlay - Always visible per user request */}
+      <div 
+        className={`draggable-panel absolute top-4 z-[1001] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 max-w-xs transition-all duration-300 ${isDraggingScore ? 'cursor-grabbing' : ''}`}
+        style={scorePanelPos || (isShortsMode ? { 
+          left: 'max(1rem, calc(50vw - (100vh * 9/16 / 2) + 12px))', 
+          transform: 'none' 
+        } : { left: '1rem' })}
+        onPointerMove={handleScorePointerMove}
+        onPointerUp={handleScorePointerUp}
+      >
+        <h2 
+          className="text-xl font-bold mb-2 text-cyan-400 cursor-grab active:cursor-grabbing select-none"
+          onPointerDown={handleScorePointerDown}
         >
-          <h2 className="text-xl font-bold mb-2 text-cyan-400">Path Finder</h2>
-          <div className="p-2 bg-gray-800 rounded border border-cyan-500 mb-3">
-            <div className="text-lg font-bold text-yellow-400">{ALGORITHMS[algorithm].name}</div>
-          </div>
-          <div className="p-2 bg-gray-800 rounded text-sm border border-gray-700 space-y-1">
-            <div className="flex justify-between"><span>Roads explored:</span><span className="text-cyan-400 font-bold">{stats.edges}</span></div>
-            <div className="flex justify-between"><span>Time:</span><span className="text-green-400">{((stats.time || 0) / 1000).toFixed(1)}s</span></div>
-            <div className="flex justify-between"><span>Distance:</span><span className="text-orange-400 font-bold">{(stats.distance || 0).toFixed(0)}m</span></div>
-          </div>
-          {status === 'success' && <div className="mt-2 text-green-400 text-sm font-medium text-center">✓ Path found</div>}
-          {status === 'running' && <p className="mt-3 text-cyan-400 text-lg font-mono">Calculating{processingDots}</p>}
+          Path Finder
+        </h2>
+        <div className="p-2 bg-gray-800 rounded border border-cyan-500 mb-3">
+          <div className="text-lg font-bold text-yellow-400">{ALGORITHMS[algorithm].name}</div>
         </div>
-      )}
+        <div className="p-2 bg-gray-800 rounded text-sm border border-gray-700 space-y-1">
+          <div className="flex justify-between"><span>Roads explored:</span><span className="text-cyan-400 font-bold">{stats.edges}</span></div>
+          <div className="flex justify-between"><span>Time:</span><span className="text-green-400">{((stats.time || 0) / 1000).toFixed(1)}s</span></div>
+          <div className="flex justify-between"><span>Distance:</span><span className="text-orange-400 font-bold">{(stats.distance || 0).toFixed(0)}m</span></div>
+        </div>
+        {status === 'success' && <div className="mt-2 text-green-400 text-sm font-medium text-center">✓ Path found</div>}
+        {status === 'running' && <p className="mt-3 text-cyan-400 text-lg font-mono">Calculating{processingDots}</p>}
+      </div>
 
       {/* Map with dimming effect */}
       <MapContainer 
