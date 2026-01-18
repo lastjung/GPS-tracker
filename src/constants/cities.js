@@ -6,7 +6,7 @@ export const CITIES = {
     end: { lat: 43.6426, lng: -79.3871 }
   },
   newyork: {
-    name: 'New York',
+    name: 'New York (Manhattan)',
     center: [40.7300, -73.9600],
     start: { lat: 40.7710, lng: -73.9890 },
     end: { lat: 40.6950, lng: -73.9350 }

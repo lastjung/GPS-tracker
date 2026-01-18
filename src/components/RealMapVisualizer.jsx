@@ -254,8 +254,15 @@ const RealMapVisualizer = () => {
   useEffect(() => {
     if (!bounds) return; // Allow loading even if locked to get initial data
     
+
     // Prevent reloading if graph is already loaded for this area
+    if (graph.ways.length > 0 && cityKey === cityKeyRef.current) {
+      if (isLoading) setIsLoading(false);
+      return;
+    }
+
     const controller = new AbortController();
+    let isMounted = true;
 
     const load = async () => {
       const requestCity = cityKey; 
@@ -263,21 +270,24 @@ const RealMapVisualizer = () => {
       try {
         const data = await fetchRoadNetwork(bounds, controller.signal);
         
-        // Final sanity check: if the city changed, discard data
-        if (cityKeyRef.current !== requestCity) {
+        // Final sanity check: if the city changed or unmounted, discard data
+        if (!isMounted || cityKeyRef.current !== requestCity) {
            console.log(`Discarding stale data for ${requestCity}`);
            return;
         }
 
         const graphData = buildGraph(data);
-        setGraph(graphData);
-        if (status === 'error_loading') setStatus('idle');
+        if (isMounted) {
+          setGraph(graphData);
+          if (status === 'error_loading') setStatus('idle');
+        }
       } catch (err) {
         if (err.name === 'AbortError') return;
+        if (!isMounted) return;
         console.error('Failed to load roads:', err);
         setStatus('error_loading');
       } finally {
-        if (cityKeyRef.current === requestCity) {
+        if (isMounted && cityKeyRef.current === requestCity) {
           setIsLoading(false);
         }
       }
@@ -285,6 +295,7 @@ const RealMapVisualizer = () => {
     
     const timeout = setTimeout(load, 400); 
     return () => {
+      isMounted = false;
       clearTimeout(timeout);
       controller.abort();
     };
@@ -671,8 +682,14 @@ const RealMapVisualizer = () => {
             <button
               onClick={handleStart}
               disabled={!start || !end || isLoading || countdown !== null}
-              className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 text-white rounded font-bold flex-1"
-            >▶ Start</button>
+              className={`px-4 py-2 rounded font-bold flex-1 text-white transition-all duration-200 shadow-md ${
+                !start || !end || isLoading || graph.ways.length === 0
+                  ? 'bg-gray-700 text-gray-400 cursor-not-allowed hidden-shadow' 
+                  : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 hover:scale-[1.02] shadow-green-500/30'
+              }`}
+            >
+              {!start || !end ? 'Select 2 Points' : (isLoading || graph.ways.length === 0 ? 'Wait...' : '▶ Start Navigation')}
+            </button>
             {isShortsMode && start && end && (
               <button
                 onClick={() => {
@@ -685,7 +702,7 @@ const RealMapVisualizer = () => {
             )}
             <button
               onClick={resetAll}
-              className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded"
+              className="px-4 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded shadow-sm font-medium"
             >Reset</button>
           </div>
         )}
@@ -723,10 +740,10 @@ const RealMapVisualizer = () => {
         {!isRunning && !countdown && (
           <>
             {/* Click Guide */}
-            <p className="mt-3 text-xs text-blue-300">💡 Click on blue roads only</p>
+            <p className="mt-3 text-xs text-blue-300">💡 Click blue roads to set Start/End points</p>
             
             <div className="mt-2 text-xs text-gray-500">
-              Roads: {graph.ways.length}
+              Loaded Roads: {graph.ways.length.toLocaleString()}
             </div>
             
             {/* Resize Hint for Shorts Mode */}
