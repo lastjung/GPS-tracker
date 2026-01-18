@@ -2,345 +2,20 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { MapContainer, TileLayer, Polyline, CircleMarker, Rectangle, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
-// Sound effects using Web Audio API
-const audioContextRef = { current: null };
+import { playBeep, playSuccess, playSearchTick } from '../utils/audio';
+import { haversine, boundsFromPoints } from '../utils/physics';
+import { CITIES } from '../constants/cities';
+import { useRoadNetwork } from '../hooks/useRoadNetwork';
+import { useAlgorithmRunner } from '../hooks/useAlgorithmRunner';
+import { dijkstraOnGraph, astarOnGraph } from '../algorithms/pathfinding';
+import { findNearestNode, findNearestNodeCoords } from '../utils/geo';
 
-const getAudioContext = () => {
-  if (!audioContextRef.current) {
-    audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
-  }
-  return audioContextRef.current;
-};
-
-// Play a beep sound for countdown (cheerful, short)
-const playBeep = (frequency = 880, duration = 0.15) => {
-  try {
-    const ctx = getAudioContext();
-    const oscillator = ctx.createOscillator();
-    const gainNode = ctx.createGain();
-    
-    oscillator.connect(gainNode);
-    gainNode.connect(ctx.destination);
-    
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(frequency, ctx.currentTime);
-    
-    gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
-    
-    oscillator.start(ctx.currentTime);
-    oscillator.stop(ctx.currentTime + duration);
-  } catch (e) {
-    console.log('Audio not supported');
-  }
-};
-
-// Play success sound (ascending chime)
-const playSuccess = () => {
-  try {
-    const ctx = getAudioContext();
-    const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
-    
-    notes.forEach((freq, i) => {
-      const oscillator = ctx.createOscillator();
-      const gainNode = ctx.createGain();
-      
-      oscillator.connect(gainNode);
-      gainNode.connect(ctx.destination);
-      
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.12);
-      
-      gainNode.gain.setValueAtTime(0, ctx.currentTime + i * 0.12);
-      gainNode.gain.linearRampToValueAtTime(0.25, ctx.currentTime + i * 0.12 + 0.05);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.12 + 0.3);
-      
-      oscillator.start(ctx.currentTime + i * 0.12);
-      oscillator.stop(ctx.currentTime + i * 0.12 + 0.35);
-    });
-  } catch (e) {
-    console.log('Audio not supported');
-  }
-};
-
-// Play subtle tick during searching (soft click)
-const playSearchTick = () => {
-  try {
-    const ctx = getAudioContext();
-    const oscillator = ctx.createOscillator();
-    const gainNode = ctx.createGain();
-    
-    oscillator.connect(gainNode);
-    gainNode.connect(ctx.destination);
-    
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(1200 + Math.random() * 400, ctx.currentTime);
-    
-    gainNode.gain.setValueAtTime(0.05, ctx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.03);
-    
-    oscillator.start(ctx.currentTime);
-    oscillator.stop(ctx.currentTime + 0.03);
-  } catch (e) {}
-};
-
-// Fetch road network from OSM Overpass API
-const fetchRoadNetwork = async (bounds, signal) => {
-  const servers = [
-    'https://overpass-api.de/api/interpreter',
-    'https://lz4.overpass-api.de/api/interpreter',
-    'https://api.openstreetmap.fr/oapi/interpreter',
-    'https://overpass.kumi.systems/api/interpreter',
-    'https://overpass.openstreetmap.ru/api/interpreter'
-  ];
-
-  const makeQuery = (b, timeoutSeconds) => `
-    [out:json][timeout:${timeoutSeconds}];
-    way["highway"~"motorway|trunk|primary|secondary|tertiary|residential"](${b.south},${b.west},${b.north},${b.east});
-    (._;>;);
-    out body;
-  `;
-
-  const shrinkBounds = (b, factor) => {
-    const centerLat = (b.north + b.south) / 2;
-    const centerLon = (b.east + b.west) / 2;
-    const latHalf = ((b.north - b.south) * factor) / 2;
-    const lonHalf = ((b.east - b.west) * factor) / 2;
-    return {
-      south: centerLat - latHalf,
-      west: centerLon - lonHalf,
-      north: centerLat + latHalf,
-      east: centerLon + lonHalf
-    };
-  };
-
-  const attempts = [
-    { bounds, timeout: 35 },
-    { bounds: shrinkBounds(bounds, 0.8), timeout: 40 },
-    { bounds: shrinkBounds(bounds, 0.6), timeout: 45 }
-  ];
-
-  for (const attempt of attempts) {
-    const query = makeQuery(attempt.bounds, attempt.timeout);
-    for (const server of servers) {
-      try {
-        const response = await fetch(server, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded'
-          },
-          body: `data=${encodeURIComponent(query)}`,
-          signal
-        });
-        if (response.ok) {
-          return response.json();
-        }
-      } catch (e) {
-        console.log(`Server ${server} failed, trying next...`);
-      }
-    }
-  }
-
-  throw new Error('All Overpass servers failed');
-};
-
-// Build graph from OSM data
-const buildGraph = (osmData) => {
-  const nodes = {};
-  const edges = {};
-  const ways = [];
-  
-  // First pass: collect all nodes
-  osmData.elements.forEach(el => {
-    if (el.type === 'node') {
-      nodes[el.id] = { lat: el.lat, lon: el.lon };
-    }
-  });
-  
-  // Second pass: build edges from ways
-  osmData.elements.forEach(el => {
-    if (el.type === 'way' && el.nodes) {
-      const wayCoords = el.nodes
-        .filter(nodeId => nodes[nodeId])
-        .map(nodeId => [nodes[nodeId].lat, nodes[nodeId].lon]);
-      
-      if (wayCoords.length > 1) {
-        ways.push(wayCoords);
-      }
-      
-      // Build adjacency list
-      for (let i = 0; i < el.nodes.length - 1; i++) {
-        const from = el.nodes[i];
-        const to = el.nodes[i + 1];
-        if (nodes[from] && nodes[to]) {
-          if (!edges[from]) edges[from] = [];
-          if (!edges[to]) edges[to] = [];
-          edges[from].push(to);
-          edges[to].push(from);
-        }
-      }
-    }
-  });
-  
-  return { nodes, edges, ways };
-};
-
-// Haversine distance calculation
-const haversine = (lat1, lon1, lat2, lon2) => {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon/2) * Math.sin(dLon/2);
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-};
-
-// Dijkstra algorithm with visualization steps
-function* dijkstraOnGraph(nodes, edges, startId, endId) {
-  const distances = { [startId]: 0 };
-  const previous = {};
-  const visited = new Set();
-  const visitedEdges = [];
-  const pq = [[0, startId]];
-  
-  while (pq.length > 0) {
-    pq.sort((a, b) => a[0] - b[0]);
-    const [dist, currentId] = pq.shift();
-    
-    if (visited.has(currentId)) continue;
-    visited.add(currentId);
-    
-    if (currentId === endId) {
-      const path = [];
-      let curr = endId;
-      while (curr) {
-        const node = nodes[curr];
-        path.unshift([node.lat, node.lon]);
-        curr = previous[curr];
-      }
-      yield { type: 'found', path, visitedEdges, totalDistance: dist };
-      return;
-    }
-    
-    const neighbors = edges[currentId] || [];
-    for (const neighborId of neighbors) {
-      if (visited.has(neighborId)) continue;
-      
-      const current = nodes[currentId];
-      const neighbor = nodes[neighborId];
-      const weight = haversine(current.lat, current.lon, neighbor.lat, neighbor.lon);
-      const newDist = dist + weight;
-      
-      if (distances[neighborId] === undefined || newDist < distances[neighborId]) {
-        distances[neighborId] = newDist;
-        previous[neighborId] = currentId;
-        pq.push([newDist, neighborId]);
-        visitedEdges.push([[current.lat, current.lon], [neighbor.lat, neighbor.lon]]);
-        yield { type: 'visiting', visitedEdges: [...visitedEdges], currentDistance: newDist };
-      }
-    }
-  }
-  
-  yield { type: 'not_found' };
-}
-
-// A* algorithm - much faster, goes toward goal
-function* astarOnGraph(nodes, edges, startId, endId) {
-  const endNode = nodes[endId];
-  const gScore = { [startId]: 0 };
-  const fScore = { [startId]: haversine(nodes[startId].lat, nodes[startId].lon, endNode.lat, endNode.lon) };
-  const previous = {};
-  const visited = new Set();
-  const visitedEdges = [];
-  const openSet = [[fScore[startId], startId]];
-  
-  while (openSet.length > 0) {
-    openSet.sort((a, b) => a[0] - b[0]);
-    const [, currentId] = openSet.shift();
-    
-    if (visited.has(currentId)) continue;
-    visited.add(currentId);
-    
-    if (currentId === endId) {
-      const path = [];
-      let curr = endId;
-      while (curr) {
-        const node = nodes[curr];
-        path.unshift([node.lat, node.lon]);
-        curr = previous[curr];
-      }
-      yield { type: 'found', path, visitedEdges, totalDistance: gScore[endId] };
-      return;
-    }
-    
-    const neighbors = edges[currentId] || [];
-    for (const neighborId of neighbors) {
-      if (visited.has(neighborId)) continue;
-      
-      const current = nodes[currentId];
-      const neighbor = nodes[neighborId];
-      const tentativeG = gScore[currentId] + haversine(current.lat, current.lon, neighbor.lat, neighbor.lon);
-      
-      if (gScore[neighborId] === undefined || tentativeG < gScore[neighborId]) {
-        previous[neighborId] = currentId;
-        gScore[neighborId] = tentativeG;
-        fScore[neighborId] = tentativeG + haversine(neighbor.lat, neighbor.lon, endNode.lat, endNode.lon);
-        openSet.push([fScore[neighborId], neighborId]);
-        visitedEdges.push([[current.lat, current.lon], [neighbor.lat, neighbor.lon]]);
-        yield { type: 'visiting', visitedEdges: [...visitedEdges], currentDistance: tentativeG };
-      }
-    }
-  }
-  
-  yield { type: 'not_found' };
-}
-
+const algoFns = { astar: astarOnGraph, dijkstra: dijkstraOnGraph };
 const ALGORITHMS = {
   astar: { name: 'A* Search', fn: astarOnGraph, description: 'Goal-directed heuristic search' },
   dijkstra: { name: 'Dijkstra', fn: dijkstraOnGraph, description: 'Uniform cost exploration' }
 };
 
-// Find nearest node to a lat/lng and return both id and coordinates
-const findNearestNode = (nodes, lat, lng) => {
-  let nearest = null;
-  let minDist = Infinity;
-  
-  const nodeEntries = Object.entries(nodes);
-  if (nodeEntries.length === 0) return null;
-
-  for (const [id, node] of nodeEntries) {
-    const dist = Math.pow(node.lat - lat, 2) + Math.pow(node.lon - lng, 2);
-    if (dist < minDist) {
-      minDist = dist;
-      nearest = Number(id);
-    }
-  }
-  return nearest;
-};
-
-const findNearestNodeCoords = (nodes, lat, lng) => {
-  let nearestCoords = null;
-  let minDist = Infinity;
-  
-  const nodeValues = Object.values(nodes);
-  if (nodeValues.length === 0) return null;
-
-  for (const node of nodeValues) {
-    const dist = Math.pow(node.lat - lat, 2) + Math.pow(node.lon - lng, 2);
-    if (dist < minDist) {
-      minDist = dist;
-      nearestCoords = { lat: node.lat, lng: node.lon };
-    }
-  }
-  
-  // ~300m threshold for urban density (increased from 0.00001)
-  if (minDist > 0.0003) { 
-    return null;
-  }
-  
-  return nearestCoords;
-};
 
 // Component to load roads when map moves
 const RoadLoader = ({ setBounds, isMapLocked }) => {
@@ -413,85 +88,72 @@ const MapClickHandler = ({ graph, start, end, setStart, setEnd, setVisitedEdges,
   return null;
 };
 
-// City presets
-const CITIES = {
-  toronto: {
-    name: 'Toronto',
-    center: [43.6600, -79.3650], 
-    start: { lat: 43.6850, lng: -79.3400 }, // Northeast end
-    end: { lat: 43.6426, lng: -79.3871 }    // CN Tower
-  },
-  newyork: {
-    name: 'New York',
-    center: [40.7300, -73.9600], // Slightly shifted focus
-    start: { lat: 40.7710, lng: -73.9890 }, // Near Lincoln Center (South-West shift)
-    end: { lat: 40.6950, lng: -73.9350 }    // Bedford-Stuyvesant (North-East shift)
-  },
-  tokyo: {
-    name: 'Tokyo (Bay View)',
-    center: [35.6715, 139.7700], // Balanced center between Ueno and Odaiba
-    start: { lat: 35.7130, lng: 139.7740 }, // Ueno
-    end: { lat: 35.6300, lng: 139.7760 }    // Odaiba
-  },
-  seoul: {
-    name: 'Seoul',
-    center: [37.5385, 127.0200], 
-    start: { lat: 37.5665, lng: 126.9780 }, // Seoul City Hall Intersection
-    end: { lat: 37.5125, lng: 127.0588 }    // Coex Building (Main Road side)
-  }
-};
 
-const boundsFromPoints = (a, b, padding = 0.01) => {
-  const south = Math.min(a.lat, b.lat) - padding;
-  const north = Math.max(a.lat, b.lat) + padding;
-  const west = Math.min(a.lng, b.lng) - padding;
-  const east = Math.max(a.lng, b.lng) + padding;
-  return { south, west, north, east };
-};
 
 const RealMapVisualizer = () => {
-  const [cityKey, setCityKey] = useState('toronto'); // Default to Toronto
+  const [cityKey, setCityKey] = useState('toronto');
   const city = CITIES[cityKey];
-  
-  const [graph, setGraph] = useState({ nodes: {}, edges: {}, ways: [] });
+  const [bounds, setBounds] = useState(null);
+  const [delayedStart, setDelayedStart] = useState(false);
+  const [countdown, setCountdown] = useState(null);
+  const [recordMode, setRecordMode] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [showMenu, setShowMenu] = useState(true);
+  const [displayMode, setDisplayMode] = useState('Visualize');
+  const [isMapLocked, setIsMapLocked] = useState(true);
+  const [isShortsMode, setIsShortsMode] = useState(false);
+
+  // Custom Hooks
+  const { graph, setGraph, isLoading, error: networkError, setIsLoading, fetchRoadNetwork, buildGraph } = useRoadNetwork(bounds, cityKey);
   const [start, setStart] = useState(city.start);
   const [end, setEnd] = useState(city.end);
-  const [visitedEdges, setVisitedEdges] = useState([]);
-  const [finalPath, setFinalPath] = useState([]);
-  const [isRunning, setIsRunning] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [bounds, setBounds] = useState(null);
-  const [speed, setSpeed] = useState(25); // Default speed set higher
-  const [algorithm, setAlgorithm] = useState('astar');
-  const [status, setStatus] = useState('idle');
-  const [stats, setStats] = useState({ edges: 0, time: 0, distance: 0 });
-  const [density, setDensity] = useState(1); // Show all edges by default
-  const [showVisualization, setShowVisualization] = useState(true); // New toggle state
-  const [processingDots, setProcessingDots] = useState('');
-  const [displayMode, setDisplayMode] = useState('Visualize');
-  const [isMapLocked, setIsMapLocked] = useState(true); // Locked by default as requested
-  const [isShortsMode, setIsShortsMode] = useState(false); // 9:16 Shorts Guide Mode
-  const [delayedStart, setDelayedStart] = useState(false); // 3-second delay before start (disabled)
-  const [countdown, setCountdown] = useState(null); // Countdown display
-  const [recordMode, setRecordMode] = useState(false); // Vertical recording mode
 
-  const [isRecording, setIsRecording] = useState(false); // Recording state
-  const [showMenu, setShowMenu] = useState(true); // Toggle for Menu Panel visibility
-  
-  // Refs for tracking animation and intervals
-  const animationRef = useRef(null);
-  const dotsIntervalRef = useRef(null);
+  const {
+    isRunning,
+    status,
+    setStatus,
+    stats,
+    setStats,
+    visitedEdges,
+    setVisitedEdges,
+    finalPath,
+    setFinalPath,
+    processingDots,
+    setProcessingDots,
+    speed,
+    setSpeed,
+    algorithm,
+    setAlgorithm,
+    density,
+    setDensity,
+    showVisualization,
+    setShowVisualization,
+    run: runAlgorithmCore,
+    stop: stopAlgorithm,
+    reset: resetAlgorithm
+  } = useAlgorithmRunner(graph, start, end, {
+    findNearestNode,
+    haversine
+  });
+
   const startTimeRef = useRef(null);
-  const recordContainerRef = useRef(null); // Ref for recording area
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
-  const pendingStreamRef = useRef(null); // Store stream until countdown finishes
-  const lastFitRef = useRef(0); // Lock for fitToRoute to prevent shaking
-  const cityKeyRef = useRef(cityKey); // Latest city key for async checks
+  const pendingStreamRef = useRef(null);
+  const lastFitRef = useRef(0);
+  const cityKeyRef = useRef(cityKey);
 
   useEffect(() => {
     cityKeyRef.current = cityKey;
   }, [cityKey]);
+
+  useEffect(() => {
+    if (networkError === 'error_loading') {
+      setStatus('error_loading');
+    } else if (status === 'error_loading' && !networkError) {
+      setStatus('idle');
+    }
+  }, [networkError, status, setStatus]);
   
   // Drag state for Menu Panel
   const [menuPanelPos, setMenuPanelPos] = useState(null);
@@ -574,7 +236,7 @@ const RealMapVisualizer = () => {
   };
 
   const handleCityChange = (key) => {
-    stopAlgorithm(); // 2) Stop any running logic/timers immediately
+    stopAlgorithm();
     const newCity = CITIES[key];
     setCityKey(key);
     setShowMenu(true); 
@@ -582,12 +244,10 @@ const RealMapVisualizer = () => {
     setEnd(newCity.end);
     setBounds(boundsFromPoints(newCity.start, newCity.end, 0.01));
     
-    // 3) Clear all visual and data states immediately
     setGraph({ nodes: {}, edges: {}, ways: [] }); 
     setVisitedEdges([]);
     setFinalPath([]);
     setStatus('idle');
-    setStats({ edges: 0, time: 0, distance: 0 });
     setProcessingDots('');
   };
 
@@ -628,7 +288,7 @@ const RealMapVisualizer = () => {
       clearTimeout(timeout);
       controller.abort();
     };
-  }, [bounds, cityKey, graph.ways.length]);
+  }, [bounds, cityKey, graph.ways.length, setIsLoading, fetchRoadNetwork, buildGraph, setGraph, setStatus, status]);
 
   // Combined score update logic
   const updateRealTimeStats = useCallback((visitedEdges, currentDistance) => {
@@ -642,362 +302,69 @@ const RealMapVisualizer = () => {
       time: Math.max(100, elapsed),
       distance: distMeters
     });
-  }, []);
+  }, [setStats]);
   
-  const runAlgorithm = useCallback(() => {
-    if (!start || !end || Object.keys(graph.nodes).length === 0) {
-      console.warn('Road network not ready');
-      return;
-    }
+  // Refined run trigger
+  const handleStart = useCallback(() => {
+    if (!start || !end || Object.keys(graph.nodes).length === 0) return;
     
-    const startId = findNearestNode(graph.nodes, start.lat, start.lng);
-    const endId = findNearestNode(graph.nodes, end.lat, end.lng);
-    
-    if (!startId || !endId) {
-      console.warn('Start or end point too far from road');
-      setStatus('click_too_far');
-      setTimeout(() => setStatus('idle'), 3000);
-      return;
-    }
-    
-    if (startId === endId) {
-      setStatus('idle');
-      return;
-    }
-    
-    // Only use countdown if explicitly requested (e.g. for recording)
+    // If delayed start (for recording)
     if (delayedStart && countdown === null) {
       setCountdown(3);
       return;
     }
-    
-    setIsRunning(true);
-    setStatus('running');
-    setVisitedEdges([]);
-    setFinalPath([]);
-    setStats({ edges: 0, time: 0, distance: 0 }); // Reset stats
-    setShowMenu(false); // Hide menu while running and keep hidden after finish
-    
-    const gen = ALGORITHMS[algorithm].fn(graph.nodes, graph.edges, startId, endId);
-    let totalSteps = 0;
-    
-    // Processing dots animation
-    let dotCount = 0;
-    dotsIntervalRef.current = setInterval(() => {
-      dotCount = (dotCount + 1) % 4;
-      setProcessingDots('.'.repeat(dotCount));
-    }, 300);
-    
-    startTimeRef.current = Date.now();
-    
-    // Immediate mode: Fast forward to end if visualization is disabled
-    if (!showVisualization) {
-      let result = null;
-      for (const val of gen) {
-        result = val;
-        if (val.type === 'found' || val.type === 'not_found') break;
-      }
-      
-      if (result && result.type === 'found') {
-        const elapsed = Date.now() - startTimeRef.current;
-        
-        // Use precise distance calculated by algorithm
-        let distance = result.totalDistance * 1000;
-        
-        // Fallback calculation if missing (legacy)
-        if (distance === undefined || distance === null) {
-          distance = 0;
-          for (let i = 0; i < result.path.length - 1; i++) {
-            distance += haversine(result.path[i][0], result.path[i][1], result.path[i+1][0], result.path[i+1][1]);
-          }
-          distance *= 1000;
-        }
 
-        setVisitedEdges(result.visitedEdges);
-        setFinalPath(result.path);
-        setStats({ edges: result.visitedEdges.length, time: elapsed, distance: distance });
-        setStatus('success');
-        playSuccess();
-      } else {
-        setStatus('no_path');
-      }
-      setIsRunning(false);
-      clearInterval(dotsIntervalRef.current);
-      setProcessingDots('');
-      
-      // Auto stop recording if active
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-        setTimeout(() => {
-          mediaRecorderRef.current.stop();
-        }, 1500); // Wait 1.5s to capture final result
-      }
-      return;
-    }
+    runAlgorithmCore(algoFns);
+  }, [start, end, graph, delayedStart, countdown, runAlgorithmCore]);
 
-    const step = () => {
-      let iterations = 0;
-      let lastValue = null;
-      
-      // Values now strictly mapping: higher speed = more steps per tick
-      const stepsPerTick = speed <= 10 ? 20 : speed <= 25 ? 50 : 120;
-      
-      while (iterations < stepsPerTick) {
-        const { value, done } = gen.next();
-        
-        if (done || !value) {
-          if (!lastValue) {
-            setIsRunning(false);
-            if (dotsIntervalRef.current) clearInterval(dotsIntervalRef.current);
-            return;
-          }
-          break;
-        }
-        
-        lastValue = value;
-        totalSteps++;
-        if (value.type === 'found' || value.type === 'not_found') break;
-        iterations++;
-      }
-      
-      if (lastValue.type === 'visiting') {
-        const allEdges = lastValue.visitedEdges;
-        const filteredEdges = density === 1 
-          ? allEdges 
-          : allEdges.filter((_, i) => i % density === 0);
-          
-        setVisitedEdges(filteredEdges); // Removed .slice(-1000) to keep ALL edges
-        updateRealTimeStats(allEdges, lastValue.currentDistance);
-        
-        // Play subtle tick every ~10 frames
-        if (allEdges.length % 50 === 0) playSearchTick();
-        
-        // Lower delay means faster visualization
-        const delay = Math.max(1, 41 - speed); 
-        animationRef.current = setTimeout(step, delay);
-      } else if (lastValue.type === 'found') {
-        clearInterval(dotsIntervalRef.current);
-        setProcessingDots('');
-        const elapsed = Date.now() - startTimeRef.current;
-        let distance = 0;
-        for (let i = 0; i < lastValue.path.length - 1; i++) {
-          distance += haversine(lastValue.path[i][0], lastValue.path[i][1], lastValue.path[i+1][0], lastValue.path[i+1][1]);
-        }
-        setVisitedEdges(lastValue.visitedEdges); // FULL edges on success
-        setFinalPath(lastValue.path);
-        setStats({ edges: lastValue.visitedEdges.length, time: elapsed, distance: distance * 1000 });
-        setStatus('success');
-        playSuccess();
-        setIsRunning(false);
-        // Auto stop recording if active
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-          setTimeout(() => mediaRecorderRef.current.stop(), 1500);
-        }
-      } else {
-        clearInterval(dotsIntervalRef.current);
-        setProcessingDots('');
-        setStatus('no_path');
-        setIsRunning(false);
-        // Auto stop recording if active
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-          setTimeout(() => mediaRecorderRef.current.stop(), 1500);
-        }
-      }
-    };
-    
-    startTimeRef.current = Date.now();
-    setStatus('running');
-    step();
-  }, [start, end, graph, speed, algorithm, density, showVisualization, delayedStart, countdown]);
-
-  // Countdown effect
+  // Countdown effect to trigger run
   useEffect(() => {
-    if (countdown === null) return;
-    
-    if (countdown > 0) {
-      playBeep(880 + (3 - countdown) * 220); // Higher pitch as countdown goes down
-      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
-      return () => clearTimeout(timer);
-    } else {
-      // Countdown finished, start the algorithm
-      // Set recording state FIRST to prevent control panel flash
+    if (countdown === 0) {
+      setCountdown(null);
       if (pendingStreamRef.current) {
         setIsRecording(true);
-      }
-      setCountdown(null);
-      // Re-call runAlgorithm which will now proceed since countdown is null
-      setTimeout(() => {
-        // Start recording now if stream is pending
-        if (pendingStreamRef.current) {
-          const stream = pendingStreamRef.current;
-          mediaRecorderRef.current = new MediaRecorder(stream, {
-            mimeType: 'video/webm;codecs=vp9',
-            videoBitsPerSecond: 5000000
-          });
-          
-          mediaRecorderRef.current.ondataavailable = (e) => {
-            if (e.data.size > 0) {
-              recordedChunksRef.current.push(e.data);
-            }
-          };
-          
-          mediaRecorderRef.current.onstop = () => {
-            stream.getTracks().forEach(track => track.stop());
-            const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `gps-tracker-${Date.now()}.webm`;
-            a.click();
-            URL.revokeObjectURL(url);
-            setIsRecording(false);
-            pendingStreamRef.current = null;
-          };
-          
-          mediaRecorderRef.current.start();
-          setIsRecording(true);
-        }
-        
-        setIsRunning(true);
-        setStatus('running');
-        setVisitedEdges([]);
-        setFinalPath([]);
-        
-        const startId = findNearestNode(graph.nodes, start.lat, start.lng);
-        const endId = findNearestNode(graph.nodes, end.lat, end.lng);
-        
-        const gen = ALGORITHMS[algorithm].fn(graph.nodes, graph.edges, startId, endId);
-        
-        let dotCount = 0;
-        dotsIntervalRef.current = setInterval(() => {
-          dotCount = (dotCount + 1) % 4;
-          setProcessingDots('.'.repeat(dotCount));
-        }, 300);
-        
-        startTimeRef.current = Date.now();
-        
-        const step = () => {
-          let iterations = 0;
-          let lastValue = null;
-            // Reduced stepsPerTick
-          const stepsPerTick = speed <= 10 ? 20 : speed <= 25 ? 50 : 120;
-          
-          while (iterations < stepsPerTick) {
-            const { value, done } = gen.next();
-            if (done || !value) {
-              if (!lastValue) {
-                setIsRunning(false);
-                if (dotsIntervalRef.current) clearInterval(dotsIntervalRef.current);
-                return;
-              }
-              break;
-            }
-            lastValue = value;
-            if (value.type === 'found' || value.type === 'not_found') break;
-            iterations++;
-          }
-          
-          if (lastValue.type === 'visiting') {
-            const allEdges = lastValue.visitedEdges;
-            const filteredEdges = density === 1 ? allEdges : allEdges.filter((_, i) => i % density === 0);
-            setVisitedEdges(filteredEdges);
-            updateRealTimeStats(allEdges, lastValue.currentDistance);
-            
-            // Play subtle tick every ~50 edges
-            if (allEdges.length % 50 === 0) playSearchTick();
-            
-            const delay = Math.max(1, 41 - speed);
-            animationRef.current = setTimeout(step, delay);
-          } else if (lastValue.type === 'found') {
-            clearInterval(dotsIntervalRef.current);
-            setProcessingDots('');
-            const elapsed = Date.now() - startTimeRef.current;
-            
-            // Use precise distance calculated by algorithm
-            let distance = lastValue.totalDistance * 1000;
-            
-            // Fallback calculation if missing (legacy)
-            if (distance === undefined || distance === null) {
-              distance = 0;
-              for (let i = 0; i < lastValue.path.length - 1; i++) {
-                distance += haversine(lastValue.path[i][0], lastValue.path[i][1], lastValue.path[i+1][0], lastValue.path[i+1][1]);
-              }
-              distance *= 1000;
-            }
-
-            setVisitedEdges(lastValue.visitedEdges);
-            setFinalPath(lastValue.path);
-            setStats({ edges: lastValue.visitedEdges.length, time: elapsed, distance: distance });
-            setStatus('success');
-            playSuccess();
-            setIsRunning(false);
-            // Auto stop recording if active
-            if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-              setTimeout(() => mediaRecorderRef.current.stop(), 1500);
-            }
-          } else {
-            clearInterval(dotsIntervalRef.current);
-            setProcessingDots('');
-            setStatus('no_path');
-            setIsRunning(false);
-            // Auto stop recording if active
-            if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-              setTimeout(() => mediaRecorderRef.current.stop(), 1500);
-            }
-          }
+        const stream = pendingStreamRef.current;
+        mediaRecorderRef.current = new MediaRecorder(stream, {
+          mimeType: 'video/webm;codecs=vp9',
+          videoBitsPerSecond: 5000000
+        });
+        mediaRecorderRef.current.ondataavailable = (e) => {
+          if (e.data.size > 0) recordedChunksRef.current.push(e.data);
         };
-        
-        if (!showVisualization) {
-          let result = null;
-          for (const val of gen) {
-            result = val;
-            if (val.type === 'found' || val.type === 'not_found') break;
-          }
-          if (result && result.type === 'found') {
-            const elapsed = Date.now() - startTimeRef.current;
-            let distance = 0;
-            for (let i = 0; i < result.path.length - 1; i++) {
-              distance += haversine(result.path[i][0], result.path[i][1], result.path[i+1][0], result.path[i+1][1]);
-            }
-            setVisitedEdges(result.visitedEdges);
-            setFinalPath(result.path);
-            setStats({ edges: result.visitedEdges.length, time: elapsed, distance: distance * 1000 });
-            setStatus('success');
-            playSuccess();
-          } else {
-            setStatus('no_path');
-          }
-          setIsRunning(false);
-          clearInterval(dotsIntervalRef.current);
-          setProcessingDots('');
-        } else {
-          step();
-        }
-      }, 100);
+        mediaRecorderRef.current.onstop = () => {
+          stream.getTracks().forEach(track => track.stop());
+          const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `gps-tracker-${Date.now()}.webm`;
+          a.click();
+          URL.revokeObjectURL(url);
+          setIsRecording(false);
+          pendingStreamRef.current = null;
+        };
+        mediaRecorderRef.current.start();
+      }
+      runAlgorithmCore(algoFns);
+    } else if (countdown !== null && countdown > 0) {
+      playBeep(880 + (3 - countdown) * 220);
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
     }
-  }, [countdown, graph, start, end, algorithm, speed, density, showVisualization]);
+  }, [countdown, runAlgorithmCore, setIsRecording]);
+
   
-  const stopAlgorithm = useCallback(() => {
-    if (animationRef.current) clearTimeout(animationRef.current);
-    if (dotsIntervalRef.current) clearInterval(dotsIntervalRef.current);
-    setProcessingDots('');
-    setIsRunning(false);
-    setCountdown(null);
-  }, []);
   
   const resetAll = useCallback(() => {
     stopAlgorithm();
+    resetAlgorithm();
     setStart(city.start);
     setEnd(city.end);
     setShowMenu(true); // Restore menu on reset
-    setVisitedEdges([]);
-    setFinalPath([]);
-    setStatus('idle');
-    setStats({ edges: 0, time: 0, distance: 0 });
-    setProcessingDots('');
     setCountdown(null);
     setMenuPanelPos(null);
     setScorePanelPos(null);
-  }, [stopAlgorithm, city.start, city.end]);
+  }, [stopAlgorithm, resetAlgorithm, city.start, city.end]);
 
   // Start recording with screen capture
   const startRecording = useCallback(async () => {
@@ -1302,7 +669,7 @@ const RealMapVisualizer = () => {
         {!isRunning && !countdown && (
           <div className="flex gap-2">
             <button
-              onClick={runAlgorithm}
+              onClick={handleStart}
               disabled={!start || !end || isLoading || countdown !== null}
               className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 text-white rounded font-bold flex-1"
             >▶ Start</button>
