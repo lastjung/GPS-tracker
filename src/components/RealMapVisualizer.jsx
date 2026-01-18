@@ -611,44 +611,38 @@ const RealMapVisualizer = () => {
     return () => clearTimeout(timeout);
   }, [bounds, graph.ways.length]);
   
-  const runAlgorithm = useCallback(() => {
-    if (!start || !end || Object.keys(graph.nodes).length === 0) {
-      console.warn('Road network not ready');
-      return;
-    }
+  const runAlgorithm = useCallback((isRecordingCall = false) => {
+    if (!start || !end || Object.keys(graph.nodes).length === 0) return;
     
+    // Check points
     const startId = findNearestNode(graph.nodes, start.lat, start.lng);
     const endId = findNearestNode(graph.nodes, end.lat, end.lng);
     
     if (!startId || !endId) {
-      console.warn('Start or end point too far from road');
       setStatus('click_too_far');
       setTimeout(() => setStatus('idle'), 3000);
       return;
     }
     
-    if (startId === endId) {
-      setStatus('idle');
-      return;
-    }
-    
-    // Only use countdown if explicitly requested (e.g. for recording)
-    if (delayedStart && countdown === null) {
+    // Recording call needs countdown first if not already running
+    if (isRecordingCall && countdown === null && !isRunning) {
       setCountdown(3);
       return;
     }
     
+    // Start execution
     setIsRunning(true);
     setStatus('running');
     setVisitedEdges([]);
     setFinalPath([]);
-    setShowMenu(false); // Hide menu while running and keep hidden after finish
+    setStats({ edges: 0, time: 0, distance: 0 });
+    setShowMenu(false);
     
     const gen = ALGORITHMS[algorithm].fn(graph.nodes, graph.edges, startId, endId);
-    let totalSteps = 0;
     
-    // Processing dots animation
+    // Dots animation
     let dotCount = 0;
+    if (dotsIntervalRef.current) clearInterval(dotsIntervalRef.current);
     dotsIntervalRef.current = setInterval(() => {
       dotCount = (dotCount + 1) % 4;
       setProcessingDots('.'.repeat(dotCount));
@@ -656,124 +650,82 @@ const RealMapVisualizer = () => {
     
     startTimeRef.current = Date.now();
     
-    // Immediate mode: Fast forward to end if visualization is disabled
+    // Immediate Mode (No Viz)
     if (!showVisualization) {
       let result = null;
       for (const val of gen) {
         result = val;
         if (val.type === 'found' || val.type === 'not_found') break;
       }
-      
-      if (result && result.type === 'found') {
-        const elapsed = Date.now() - startTimeRef.current;
-        
-        // Use precise distance calculated by algorithm
-        let distance = result.totalDistance * 1000;
-        
-        // Fallback calculation if missing (legacy)
-        if (distance === undefined || distance === null) {
-          distance = 0;
-          for (let i = 0; i < result.path.length - 1; i++) {
-            distance += haversine(result.path[i][0], result.path[i][1], result.path[i+1][0], result.path[i+1][1]);
-          }
-          distance *= 1000;
-        }
-
-        setVisitedEdges(result.visitedEdges);
-        setFinalPath(result.path);
-        setStats({ edges: result.visitedEdges.length, time: elapsed, distance: distance });
-        setStatus('success');
-        playSuccess();
-      } else {
-        setStatus('no_path');
-      }
-      setIsRunning(false);
-      clearInterval(dotsIntervalRef.current);
-      setProcessingDots('');
-      
-      // Auto stop recording if active
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-        setTimeout(() => {
-          mediaRecorderRef.current.stop();
-        }, 1500); // Wait 1.5s to capture final result
-      }
+      handleAlgorithmResult(result);
       return;
     }
 
     const step = () => {
       let iterations = 0;
       let lastValue = null;
-      
-      // Values now strictly mapping: higher speed = more steps per tick
       const stepsPerTick = speed <= 10 ? 20 : speed <= 25 ? 50 : 120;
       
       while (iterations < stepsPerTick) {
         const { value, done } = gen.next();
-        
-        if (done || !value) {
-          if (!lastValue) {
-            setIsRunning(false);
-            if (dotsIntervalRef.current) clearInterval(dotsIntervalRef.current);
-            return;
-          }
-          break;
-        }
-        
+        if (done || !value) break;
         lastValue = value;
-        totalSteps++;
         if (value.type === 'found' || value.type === 'not_found') break;
         iterations++;
       }
       
+      if (!lastValue) {
+        stopAlgorithm();
+        return;
+      }
+
       if (lastValue.type === 'visiting') {
         const allEdges = lastValue.visitedEdges;
-        const filteredEdges = density === 1 
-          ? allEdges 
-          : allEdges.filter((_, i) => i % density === 0);
-          
-        setVisitedEdges(filteredEdges); // Removed .slice(-1000) to keep ALL edges
-        setStats(prev => ({ ...prev, edges: allEdges.length }));
+        const filteredEdges = density === 1 ? allEdges : allEdges.filter((_, i) => i % density === 0);
+        setVisitedEdges(filteredEdges);
         
-        // Play subtle tick every ~10 frames
+        // Update stats in real-time
+        const elapsed = Date.now() - startTimeRef.current;
+        const distKm = lastValue.currentDistance || (allEdges.length * 0.05); // Use estimate if 0
+        
+        setStats({ 
+          edges: allEdges.length, 
+          time: Math.max(100, elapsed), 
+          distance: distKm * 1000 
+        });
+        
         if (allEdges.length % 50 === 0) playSearchTick();
-        
-        // Lower delay means faster visualization
         const delay = Math.max(1, 41 - speed); 
         animationRef.current = setTimeout(step, delay);
-      } else if (lastValue.type === 'found') {
-        clearInterval(dotsIntervalRef.current);
-        setProcessingDots('');
+      } else {
+        handleAlgorithmResult(lastValue);
+      }
+    };
+
+    const handleAlgorithmResult = (result) => {
+      clearInterval(dotsIntervalRef.current);
+      setProcessingDots('');
+      setIsRunning(false);
+      
+      if (result && result.type === 'found') {
         const elapsed = Date.now() - startTimeRef.current;
-        let distance = 0;
-        for (let i = 0; i < lastValue.path.length - 1; i++) {
-          distance += haversine(lastValue.path[i][0], lastValue.path[i][1], lastValue.path[i+1][0], lastValue.path[i+1][1]);
-        }
-        setVisitedEdges(lastValue.visitedEdges); // FULL edges on success
-        setFinalPath(lastValue.path);
-        setStats({ edges: lastValue.visitedEdges.length, time: elapsed, distance: distance * 1000 });
+        const distance = (result.totalDistance || 0) * 1000;
+        setVisitedEdges(result.visitedEdges);
+        setFinalPath(result.path);
+        setStats({ edges: result.visitedEdges.length, time: elapsed, distance });
         setStatus('success');
         playSuccess();
-        setIsRunning(false);
-        // Auto stop recording if active
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-          setTimeout(() => mediaRecorderRef.current.stop(), 1500);
-        }
       } else {
-        clearInterval(dotsIntervalRef.current);
-        setProcessingDots('');
         setStatus('no_path');
-        setIsRunning(false);
-        // Auto stop recording if active
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-          setTimeout(() => mediaRecorderRef.current.stop(), 1500);
-        }
+      }
+
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        setTimeout(() => mediaRecorderRef.current.stop(), 1500);
       }
     };
     
-    startTimeRef.current = Date.now();
-    setStatus('running');
     step();
-  }, [start, end, graph, speed, algorithm, density, showVisualization, delayedStart, countdown]);
+  }, [start, end, graph, speed, algorithm, density, showVisualization, countdown, isRunning, stopAlgorithm]);
 
   // Countdown effect
   useEffect(() => {
@@ -785,170 +737,43 @@ const RealMapVisualizer = () => {
       return () => clearTimeout(timer);
     } else {
       // Countdown finished, start the algorithm
-      // Set recording state FIRST to prevent control panel flash
-      if (pendingStreamRef.current) {
-        setIsRecording(true);
-      }
       setCountdown(null);
-      // Re-call runAlgorithm which will now proceed since countdown is null
-      setTimeout(() => {
-        // Start recording now if stream is pending
-        if (pendingStreamRef.current) {
-          const stream = pendingStreamRef.current;
-          mediaRecorderRef.current = new MediaRecorder(stream, {
-            mimeType: 'video/webm;codecs=vp9',
-            videoBitsPerSecond: 5000000
-          });
-          
-          mediaRecorderRef.current.ondataavailable = (e) => {
-            if (e.data.size > 0) {
-              recordedChunksRef.current.push(e.data);
-            }
-          };
-          
-          mediaRecorderRef.current.onstop = () => {
-            stream.getTracks().forEach(track => track.stop());
-            const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `gps-tracker-${Date.now()}.webm`;
-            a.click();
-            URL.revokeObjectURL(url);
-            setIsRecording(false);
-            pendingStreamRef.current = null;
-          };
-          
-          mediaRecorderRef.current.start();
-          setIsRecording(true);
-        }
-        
-        setIsRunning(true);
-        setStatus('running');
-        setVisitedEdges([]);
-        setFinalPath([]);
-        
-        const startId = findNearestNode(graph.nodes, start.lat, start.lng);
-        const endId = findNearestNode(graph.nodes, end.lat, end.lng);
-        
-        const gen = ALGORITHMS[algorithm].fn(graph.nodes, graph.edges, startId, endId);
-        
-        let dotCount = 0;
-        dotsIntervalRef.current = setInterval(() => {
-          dotCount = (dotCount + 1) % 4;
-          setProcessingDots('.'.repeat(dotCount));
-        }, 300);
-        
-        startTimeRef.current = Date.now();
-        
-        const step = () => {
-          let iterations = 0;
-          let lastValue = null;
-            // Reduced stepsPerTick
-          const stepsPerTick = speed <= 10 ? 20 : speed <= 25 ? 50 : 120;
-          
-          while (iterations < stepsPerTick) {
-            const { value, done } = gen.next();
-            if (done || !value) {
-              if (!lastValue) {
-                setIsRunning(false);
-                if (dotsIntervalRef.current) clearInterval(dotsIntervalRef.current);
-                return;
-              }
-              break;
-            }
-            lastValue = value;
-            if (value.type === 'found' || value.type === 'not_found') break;
-            iterations++;
-          }
-          
-          if (lastValue.type === 'visiting') {
-            const allEdges = lastValue.visitedEdges;
-            const filteredEdges = density === 1 ? allEdges : allEdges.filter((_, i) => i % density === 0);
-            setVisitedEdges(filteredEdges);
-            const currentElapsed = Date.now() - startTimeRef.current;
-            const currentDistMeters = (lastValue.currentDistance || 0) * 1000;
-            
-            setStats(prev => ({ 
-              ...prev, 
-              edges: allEdges.length, 
-              time: currentElapsed,
-              distance: currentDistMeters 
-            }));
-            
-            // Play subtle tick every ~50 edges
-            if (allEdges.length % 50 === 0) playSearchTick();
-            
-            const delay = Math.max(1, 41 - speed);
-            animationRef.current = setTimeout(step, delay);
-          } else if (lastValue.type === 'found') {
-            clearInterval(dotsIntervalRef.current);
-            setProcessingDots('');
-            const elapsed = Date.now() - startTimeRef.current;
-            
-            // Use precise distance calculated by algorithm
-            let distance = lastValue.totalDistance * 1000;
-            
-            // Fallback calculation if missing (legacy)
-            if (distance === undefined || distance === null) {
-              distance = 0;
-              for (let i = 0; i < lastValue.path.length - 1; i++) {
-                distance += haversine(lastValue.path[i][0], lastValue.path[i][1], lastValue.path[i+1][0], lastValue.path[i+1][1]);
-              }
-              distance *= 1000;
-            }
 
-            setVisitedEdges(lastValue.visitedEdges);
-            setFinalPath(lastValue.path);
-            setStats({ edges: lastValue.visitedEdges.length, time: elapsed, distance: distance });
-            setStatus('success');
-            playSuccess();
-            setIsRunning(false);
-            // Auto stop recording if active
-            if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-              setTimeout(() => mediaRecorderRef.current.stop(), 1500);
-            }
-          } else {
-            clearInterval(dotsIntervalRef.current);
-            setProcessingDots('');
-            setStatus('no_path');
-            setIsRunning(false);
-            // Auto stop recording if active
-            if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-              setTimeout(() => mediaRecorderRef.current.stop(), 1500);
-            }
+      // Start recording now if stream is pending
+      if (pendingStreamRef.current) {
+        const stream = pendingStreamRef.current;
+        mediaRecorderRef.current = new MediaRecorder(stream, {
+          mimeType: 'video/webm;codecs=vp9',
+          videoBitsPerSecond: 5000000
+        });
+        
+        mediaRecorderRef.current.ondataavailable = (e) => {
+          if (e.data.size > 0) {
+            recordedChunksRef.current.push(e.data);
           }
         };
         
-        if (!showVisualization) {
-          let result = null;
-          for (const val of gen) {
-            result = val;
-            if (val.type === 'found' || val.type === 'not_found') break;
-          }
-          if (result && result.type === 'found') {
-            const elapsed = Date.now() - startTimeRef.current;
-            let distance = 0;
-            for (let i = 0; i < result.path.length - 1; i++) {
-              distance += haversine(result.path[i][0], result.path[i][1], result.path[i+1][0], result.path[i+1][1]);
-            }
-            setVisitedEdges(result.visitedEdges);
-            setFinalPath(result.path);
-            setStats({ edges: result.visitedEdges.length, time: elapsed, distance: distance * 1000 });
-            setStatus('success');
-            playSuccess();
-          } else {
-            setStatus('no_path');
-          }
-          setIsRunning(false);
-          clearInterval(dotsIntervalRef.current);
-          setProcessingDots('');
-        } else {
-          step();
-        }
-      }, 100);
+        mediaRecorderRef.current.onstop = () => {
+          stream.getTracks().forEach(track => track.stop());
+          const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `gps-tracker-${Date.now()}.webm`;
+          a.click();
+          URL.revokeObjectURL(url);
+          setIsRecording(false);
+          pendingStreamRef.current = null;
+        };
+        
+        mediaRecorderRef.current.start();
+        setIsRecording(true);
+      }
+
+      // Execute the real logic now
+      runAlgorithm(false);
     }
-  }, [countdown, graph, start, end, algorithm, speed, density, showVisualization]);
+  }, [countdown, runAlgorithm]);
   
   const stopAlgorithm = useCallback(() => {
     if (animationRef.current) clearTimeout(animationRef.current);
@@ -990,7 +815,7 @@ const RealMapVisualizer = () => {
       recordedChunksRef.current = [];
       
       // Start countdown (recording will start when countdown finishes)
-      setCountdown(3);
+      runAlgorithm(true);
       
     } catch (err) {
       console.error('Failed to start recording:', err);
@@ -1276,7 +1101,7 @@ const RealMapVisualizer = () => {
         {!isRunning && !countdown && (
           <div className="flex gap-2">
             <button
-              onClick={runAlgorithm}
+              onClick={() => runAlgorithm(false)}
               disabled={!start || !end || isLoading || countdown !== null}
               className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 text-white rounded font-bold flex-1"
             >▶ Start</button>
