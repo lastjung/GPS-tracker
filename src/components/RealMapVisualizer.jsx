@@ -218,7 +218,7 @@ function* dijkstraOnGraph(nodes, edges, startId, endId) {
         path.unshift([node.lat, node.lon]);
         curr = previous[curr];
       }
-      yield { type: 'found', path, visitedEdges };
+      yield { type: 'found', path, visitedEdges, totalDistance: dist };
       return;
     }
     
@@ -269,7 +269,7 @@ function* astarOnGraph(nodes, edges, startId, endId) {
         path.unshift([node.lat, node.lon]);
         curr = previous[curr];
       }
-      yield { type: 'found', path, visitedEdges };
+      yield { type: 'found', path, visitedEdges, totalDistance: gScore[endId] };
       return;
     }
     
@@ -654,13 +654,22 @@ const RealMapVisualizer = () => {
       
       if (result && result.type === 'found') {
         const elapsed = Date.now() - startTimeRef.current;
-        let distance = 0;
-        for (let i = 0; i < result.path.length - 1; i++) {
-          distance += haversine(result.path[i][0], result.path[i][1], result.path[i+1][0], result.path[i+1][1]);
+        
+        // Use precise distance calculated by algorithm
+        let distance = result.totalDistance * 1000;
+        
+        // Fallback calculation if missing (legacy)
+        if (distance === undefined || distance === null) {
+          distance = 0;
+          for (let i = 0; i < result.path.length - 1; i++) {
+            distance += haversine(result.path[i][0], result.path[i][1], result.path[i+1][0], result.path[i+1][1]);
+          }
+          distance *= 1000;
         }
+
         setVisitedEdges(result.visitedEdges);
         setFinalPath(result.path);
-        setStats({ edges: result.visitedEdges.length, time: elapsed, distance: distance * 1000 });
+        setStats({ edges: result.visitedEdges.length, time: elapsed, distance: distance });
         setStatus('success');
         playSuccess();
       } else {
@@ -823,6 +832,7 @@ const RealMapVisualizer = () => {
         const step = () => {
           let iterations = 0;
           let lastValue = null;
+            // Reduced stepsPerTick
           const stepsPerTick = speed <= 10 ? 20 : speed <= 25 ? 50 : 120;
           
           while (iterations < stepsPerTick) {
@@ -846,6 +856,7 @@ const RealMapVisualizer = () => {
             setVisitedEdges(filteredEdges);
             const currentElapsed = Date.now() - startTimeRef.current;
             const currentDistMeters = (lastValue.currentDistance || 0) * 1000;
+            
             setStats(prev => ({ 
               ...prev, 
               edges: allEdges.length, 
@@ -862,13 +873,22 @@ const RealMapVisualizer = () => {
             clearInterval(dotsIntervalRef.current);
             setProcessingDots('');
             const elapsed = Date.now() - startTimeRef.current;
-            let distance = 0;
-            for (let i = 0; i < lastValue.path.length - 1; i++) {
-              distance += haversine(lastValue.path[i][0], lastValue.path[i][1], lastValue.path[i+1][0], lastValue.path[i+1][1]);
+            
+            // Use precise distance calculated by algorithm
+            let distance = lastValue.totalDistance * 1000;
+            
+            // Fallback calculation if missing (legacy)
+            if (distance === undefined || distance === null) {
+              distance = 0;
+              for (let i = 0; i < lastValue.path.length - 1; i++) {
+                distance += haversine(lastValue.path[i][0], lastValue.path[i][1], lastValue.path[i+1][0], lastValue.path[i+1][1]);
+              }
+              distance *= 1000;
             }
+
             setVisitedEdges(lastValue.visitedEdges);
             setFinalPath(lastValue.path);
-            setStats({ edges: lastValue.visitedEdges.length, time: elapsed, distance: distance * 1000 });
+            setStats({ edges: lastValue.visitedEdges.length, time: elapsed, distance: distance });
             setStatus('success');
             playSuccess();
             setIsRunning(false);
@@ -1162,18 +1182,38 @@ const RealMapVisualizer = () => {
               </select>
             </div>
             
-            <div className="flex flex-col gap-2 mb-3">
-              <label className="text-xs text-gray-400">
-                Speed: {speed} {speed <= 10 ? '(Slow)' : speed >= 40 ? '(Fast)' : ''}
-              </label>
-              <input
-                type="range"
-                min="1"
-                max="50"
-                value={speed}
-                onChange={(e) => setSpeed(Number(e.target.value))}
-                className="w-full accent-cyan-500"
-              />
+            {/* Sliders Group (Speed & Density) */}
+            <div className="flex flex-col gap-3 mb-3 bg-gray-800/30 p-2 rounded border border-gray-700/50">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-gray-400 flex justify-between">
+                  <span>Speed</span>
+                  <span className="text-cyan-400 font-mono text-[10px]">{speed}</span>
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="50"
+                  value={speed}
+                  onChange={(e) => setSpeed(Number(e.target.value))}
+                  className="w-full accent-cyan-500 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+              
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-gray-400 flex justify-between">
+                  <span>Path Density</span>
+                  <span className="text-cyan-400 font-mono text-[10px]">1/{density}</span>
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  value={density}
+                  onChange={(e) => setDensity(Number(e.target.value))}
+                  disabled={isRunning}
+                  className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                />
+              </div>
             </div>
 
             {/* Visualization & View Controls */}
@@ -1212,19 +1252,7 @@ const RealMapVisualizer = () => {
               </div>
             </div>
             
-            {/* Density Slider */}
-            <div className="flex flex-col gap-2 mb-3">
-              <label className="text-xs text-gray-400">Path Density: 1/{density}</label>
-              <input
-                type="range"
-                min="1"
-                max="10"
-                value={density}
-                onChange={(e) => setDensity(Number(e.target.value))}
-                disabled={isRunning}
-                className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-              />
-            </div>
+
           </>
         )}
         
@@ -1270,17 +1298,7 @@ const RealMapVisualizer = () => {
         </div>
         
         {/* Stats Panel - Always show when running or success */}
-        {(status === 'success' || status === 'running') && (
-          <div className="mt-3 p-2 bg-gray-800 rounded text-xs border border-gray-700">
-            <div className="flex justify-between"><span>Roads explored:</span><span className="text-cyan-400 font-bold">{stats.edges}</span></div>
-            {status === 'success' && (
-              <>
-                <div className="flex justify-between"><span>Time:</span><span className="text-green-400">{(stats.time / 1000).toFixed(1)}s</span></div>
-                <div className="flex justify-between"><span>Distance:</span><span className="text-orange-400 font-bold">{stats.distance.toFixed(0)}m</span></div>
-              </>
-            )}
-          </div>
-        )}
+
         
         {/* Retry Button */}
         {status === 'no_path' && (
