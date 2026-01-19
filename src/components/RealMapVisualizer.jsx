@@ -99,9 +99,11 @@ const RealMapVisualizer = () => {
   const [recordMode, setRecordMode] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [showMenu, setShowMenu] = useState(true);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [displayMode, setDisplayMode] = useState('Visualize');
   const [isMapLocked, setIsMapLocked] = useState(true);
   const [isShortsMode, setIsShortsMode] = useState(false);
+  const [isPreparing, setIsPreparing] = useState(false);
 
   // Custom Hooks
   const { graph, setGraph, isLoading, error: networkError, setIsLoading, fetchRoadNetwork, buildGraph } = useRoadNetwork(bounds, cityKey);
@@ -328,6 +330,21 @@ const RealMapVisualizer = () => {
     runAlgorithmCore(algoFns);
   }, [start, end, graph, delayedStart, countdown, runAlgorithmCore]);
 
+  // Move cleanup logic to a stable ref to avoid closure issues in the countdown effect
+  const onStopCallback = useCallback(() => {
+    if (recordedChunksRef.current.length > 0) {
+      const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `gps-tracker-${Date.now()}.webm`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+    }
+    setIsRecording(false);
+    pendingStreamRef.current = null;
+  }, [setIsRecording]);
+
   // Countdown effect to trigger run
   useEffect(() => {
     if (countdown === 0) {
@@ -335,26 +352,27 @@ const RealMapVisualizer = () => {
       if (pendingStreamRef.current) {
         setIsRecording(true);
         const stream = pendingStreamRef.current;
-        mediaRecorderRef.current = new MediaRecorder(stream, {
+        const recorder = new MediaRecorder(stream, {
           mimeType: 'video/webm;codecs=vp9',
           videoBitsPerSecond: 5000000
         });
-        mediaRecorderRef.current.ondataavailable = (e) => {
-          if (e.data.size > 0) recordedChunksRef.current.push(e.data);
+        mediaRecorderRef.current = recorder;
+        
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            recordedChunksRef.current.push(e.data);
+          }
         };
-        mediaRecorderRef.current.onstop = () => {
+        
+        recorder.onstop = () => {
           stream.getTracks().forEach(track => track.stop());
-          const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `gps-tracker-${Date.now()}.webm`;
-          a.click();
-          URL.revokeObjectURL(url);
-          setIsRecording(false);
-          pendingStreamRef.current = null;
+          onStopCallback();
         };
-        mediaRecorderRef.current.start();
+
+        recorder.start(100); // Collect data every 100ms
+        setTimeout(() => setIsPreparing(false), 200);
+      } else {
+        setIsPreparing(false);
       }
       runAlgorithmCore(algoFns);
     } else if (countdown !== null && countdown > 0) {
@@ -362,7 +380,43 @@ const RealMapVisualizer = () => {
       const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
       return () => clearTimeout(timer);
     }
-  }, [countdown, runAlgorithmCore, setIsRecording]);
+  }, [countdown, runAlgorithmCore, setIsRecording, onStopCallback]);
+
+  // Stop recording  
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecording(false);
+  }, []);
+
+  // Start recording with screen capture
+  const startRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: true,
+        selfBrowserSurface: 'include',
+        systemAudio: 'include' 
+      });
+      pendingStreamRef.current = stream;
+      recordedChunksRef.current = [];
+      setIsPreparing(true);
+      setCountdown(3);
+    } catch (err) {
+      console.error('Failed to start recording:', err);
+    }
+  }, []);
+
+  // Auto-stop recording 1.5s after algorithm success
+  useEffect(() => {
+    if (isRecording && status === 'success') {
+      const timer = setTimeout(() => {
+        stopRecording();
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [isRecording, status, stopRecording]);
 
   
   
@@ -377,37 +431,6 @@ const RealMapVisualizer = () => {
     setScorePanelPos(null);
   }, [stopAlgorithm, resetAlgorithm, city.start, city.end]);
 
-  // Start recording with screen capture
-  const startRecording = useCallback(async () => {
-    try {
-      // Request screen capture
-      // Request screen capture with options to include current tab
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true, // Allow user to choose Screen, Window, or Tab
-        audio: true,
-        selfBrowserSurface: 'include', // Allow current tab to be selected
-        systemAudio: 'include' 
-      });
-      
-      // Store stream for later - recording will start after countdown
-      pendingStreamRef.current = stream;
-      recordedChunksRef.current = [];
-      
-      // Start countdown (recording will start when countdown finishes)
-      setCountdown(3);
-      
-    } catch (err) {
-      console.error('Failed to start recording:', err);
-    }
-  }, []);
-
-  // Stop recording  
-  const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop();
-    }
-    setIsRecording(false);
-  }, []);
 
   // Menu Drag Handlers
   const handleMenuPointerDown = (e) => {
@@ -490,7 +513,7 @@ const RealMapVisualizer = () => {
     <div className="relative w-full h-screen">
       {/* Shorts Guide Overlay - 9:16 Letterbox */}
       {isShortsMode && (
-        <div className="absolute inset-0 z-[1002] pointer-events-none flex justify-center">
+        <div className="absolute inset-0 z-[1003] pointer-events-none flex justify-center">
           {/* Left Shadow - Solid Black for Theater Mode */}
           <div className="h-full bg-black flex-1"></div>
           
@@ -516,10 +539,10 @@ const RealMapVisualizer = () => {
         </div>
       )}
 
-      {/* Control Panel - Hidden during running/recording/countdown, visible in idle and success */}
-      {!recordMode && !isRunning && !countdown && !isRecording && showMenu && (
+      {/* Control Panel - Hidden during running/recording/countdown/preparing, visible in idle and success */}
+      {!recordMode && !isRunning && !countdown && !isRecording && !isPreparing && showMenu && (
       <div 
-        className={`draggable-panel absolute top-4 z-[1000] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 max-w-xs transition-all duration-300 ${isDraggingMenu ? 'cursor-grabbing' : ''}`}
+        className={`draggable-panel absolute z-[1001] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 w-[calc(100%-2rem)] max-w-[320px] transition-all duration-300 ${isDraggingMenu ? 'cursor-grabbing' : ''}`}
         style={menuPanelPos || (isShortsMode ? { 
           bottom: 'max(1rem, calc(50vh - (100vh * 9/16 / 2) + 12px))', 
           right: 'max(1rem, calc(50vw - (100vh * 9/16 / 2) + 12px))', 
@@ -532,16 +555,24 @@ const RealMapVisualizer = () => {
         onPointerMove={handleMenuPointerMove}
         onPointerUp={handleMenuPointerUp}
       >
-        <h2 
-          className="text-xl font-bold mb-1 text-cyan-400 cursor-grab active:cursor-grabbing select-none"
-          onPointerDown={handleMenuPointerDown}
-        >
-          Path Finder
-        </h2>
+        <div className="flex justify-between items-center mb-2">
+          <h2 
+            className="text-xl font-bold text-cyan-400 cursor-grab active:cursor-grabbing select-none"
+            onPointerDown={handleMenuPointerDown}
+          >
+            Path Finder
+          </h2>
+          <button 
+            onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+            className="p-1 px-2 bg-gray-800 hover:bg-gray-700 rounded border border-gray-600 text-xs transition-colors"
+          >
+            {isSettingsOpen ? '▲ Close' : '⚙️ Settings'}
+          </button>
+        </div>
         
-        {/* Hidden during running */}
-        {!isRunning && !countdown && (
-          <>
+        {/* Collapsible Settings Content */}
+        {isSettingsOpen && !isRunning && !countdown && (
+          <div className="overflow-hidden transition-all duration-300">
             {/* City Selector */}
             <div className="flex flex-col gap-1 mb-3">
               <label className="text-xs text-gray-400">City: <span className="text-cyan-300 font-bold">{city.name}</span></label>
@@ -557,7 +588,7 @@ const RealMapVisualizer = () => {
               </select>
             </div>
 
-            {/* Mode Toggle (Placeholder) */}
+            {/* Mode Toggle */}
             <div className="flex flex-col gap-1 mb-3">
               <label className="text-xs text-gray-400">Mode</label>
               <div className="flex bg-gray-800 rounded p-1 border border-gray-700">
@@ -571,22 +602,7 @@ const RealMapVisualizer = () => {
                 >Route</button>
               </div>
             </div>
-          </>
-        )}
 
-        {/* Current Algorithm Display - Always visible */}
-        <div className="mb-3 p-2 bg-gray-800 rounded border border-cyan-500">
-          <div className="text-lg font-bold text-yellow-400">{ALGORITHMS[algorithm].name}</div>
-          {!isRunning && <div className="text-xs text-gray-400">{ALGORITHMS[algorithm].description}</div>}
-        </div>
-        
-        {/* Hidden during running */}
-        {!isRunning && !countdown && (
-          <>
-            <p className="text-xs text-gray-400 mb-3">
-              {!start ? '1st click: Set START' : !end ? '2nd click: Set END' : 'Click map to reset'}
-            </p>
-            
             {/* Algorithm Selector */}
             <div className="flex flex-col gap-1 mb-3">
               <label className="text-xs text-gray-400">Algorithm</label>
@@ -610,25 +626,18 @@ const RealMapVisualizer = () => {
                   <span className="text-cyan-400 font-mono text-[10px]">{speed}</span>
                 </label>
                 <input
-                  type="range"
-                  min="1"
-                  max="50"
-                  value={speed}
+                  type="range" min="1" max="50" value={speed}
                   onChange={(e) => setSpeed(Number(e.target.value))}
                   className="w-full accent-cyan-500 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer"
                 />
               </div>
-              
               <div className="flex flex-col gap-1">
                 <label className="text-xs text-gray-400 flex justify-between">
                   <span>Path Density</span>
                   <span className="text-cyan-400 font-mono text-[10px]">1/{density}</span>
                 </label>
                 <input
-                  type="range"
-                  min="1"
-                  max="10"
-                  value={density}
+                  type="range" min="1" max="10" value={density}
                   onChange={(e) => setDensity(Number(e.target.value))}
                   disabled={isRunning}
                   className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
@@ -640,21 +649,15 @@ const RealMapVisualizer = () => {
             <div className="flex flex-col gap-2 mb-3 bg-gray-800/50 p-2 rounded border border-gray-700">
               <div className="flex items-center gap-2">
                 <input 
-                  type="checkbox" 
-                  id="vizToggle"
-                  checked={showVisualization} 
+                  type="checkbox" id="vizToggle" checked={showVisualization} 
                   onChange={(e) => setShowVisualization(e.target.checked)}
-                  disabled={isRunning}
-                  className="w-4 h-4 rounded accent-cyan-500"
+                  disabled={isRunning} className="w-4 h-4 rounded accent-cyan-500"
                 />
                 <label htmlFor="vizToggle" className="text-xs text-gray-300 cursor-pointer">Show Steps</label>
               </div>
-              
               <div className="flex items-center gap-2">
                 <input 
-                  type="checkbox" 
-                  id="lockToggle"
-                  checked={isMapLocked} 
+                  type="checkbox" id="lockToggle" checked={isMapLocked} 
                   onChange={(e) => setIsMapLocked(e.target.checked)}
                   className="w-4 h-4 rounded accent-orange-500"
                 />
@@ -662,48 +665,73 @@ const RealMapVisualizer = () => {
               </div>
               <div className="flex items-center gap-2">
                 <input 
-                  type="checkbox" 
-                  id="shortsToggle"
-                  checked={isShortsMode} 
+                  type="checkbox" id="shortsToggle" checked={isShortsMode} 
                   onChange={(e) => setIsShortsMode(e.target.checked)}
                   className="w-4 h-4 rounded accent-purple-500"
                 />
                 <label htmlFor="shortsToggle" className="text-xs text-purple-300 font-bold cursor-pointer">9:16 Shorts Mode</label>
               </div>
             </div>
-            
-
-          </>
+          </div>
         )}
-        
-        {/* Buttons - Only show when not running */}
-        {!isRunning && !countdown && (
-          <div className="flex gap-2">
-            <button
-              onClick={handleStart}
-              disabled={!start || !end || isLoading || countdown !== null}
-              className={`px-4 py-2 rounded font-bold flex-1 text-white transition-all duration-200 shadow-md ${
-                !start || !end || isLoading || graph.ways.length === 0
-                  ? 'bg-gray-700 text-gray-400 cursor-not-allowed hidden-shadow' 
-                  : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 hover:scale-[1.02] shadow-green-500/30'
-              }`}
-            >
-              {!start || !end ? 'Select 2 Points' : (isLoading || graph.ways.length === 0 ? 'Wait...' : '▶ Start Navigation')}
-            </button>
-            {isShortsMode && start && end && (
-              <button
-                onClick={() => {
-                  setIsShortsMode(false);
-                  setTimeout(() => setIsShortsMode(true), 10);
-                }}
-                title="Fit path into 9:16 area"
-                className="px-3 py-2 bg-purple-700 hover:bg-purple-600 text-white rounded"
-              >🎯</button>
+
+        {/* Current Algorithm Name & Description - Only show name when collapsed */}
+        <div className={`${isSettingsOpen ? 'mb-3' : 'mb-2'} p-2 bg-gray-800 rounded border border-cyan-500`}>
+          <div className="text-md font-bold text-yellow-400 flex justify-between items-center">
+            {ALGORITHMS[algorithm].name}
+            {!isSettingsOpen && !isRunning && (
+              <span className="text-[10px] text-gray-500 font-normal italic">Selected</span>
             )}
+          </div>
+          {isSettingsOpen && !isRunning && <div className="text-[10px] text-gray-400 mt-1">{ALGORITHMS[algorithm].description}</div>}
+        </div>
+        
+        {/* Grouped Action Area */}
+        {!isRunning && !countdown && (
+          <div className="flex flex-col gap-2 p-3 bg-gray-800/50 rounded-lg border border-gray-700 shadow-inner">
+            <p className={`text-[10px] text-center italic ${status === 'success' ? 'text-green-400 font-bold' : 'text-gray-400'}`}>
+              {!start ? 'Set START on map' : !end ? 'Set END on map' : status === 'success' ? '✓ Complete' : 'Ready to Navigate'}
+            </p>
+            
+            <div className="flex gap-2 items-stretch">
+              <button
+                onClick={handleStart}
+                disabled={!start || !end || isLoading || countdown !== null}
+                className={`h-8 rounded-lg font-bold flex-[2] text-xs text-white transition-all duration-300 transform active:scale-95 shadow-lg ${
+                  !start || !end || isLoading || graph.ways.length === 0
+                    ? 'bg-gray-800 text-gray-600 cursor-not-allowed border border-gray-700' 
+                    : 'bg-gradient-to-br from-emerald-400 to-teal-600 hover:from-emerald-300 hover:to-teal-500 shadow-emerald-900/40 hover:shadow-emerald-500/50'
+                }`}
+              >
+                {!start || !end ? 'Select' : (isLoading || graph.ways.length === 0 ? 'Wait' : 'Start')}
+              </button>
+              
+              <button
+                onClick={resetAll}
+                className="px-4 h-8 bg-gray-700 hover:bg-gray-600 text-gray-200 rounded-lg shadow-md font-bold text-xs transition-all border border-gray-600 active:scale-95"
+              >Reset</button>
+
+              {isShortsMode && start && end && (
+                <button
+                  onClick={() => {
+                    setIsShortsMode(false);
+                    setTimeout(() => setIsShortsMode(true), 10);
+                  }}
+                  title="Fit path into 9:16 area"
+                  className="px-4 h-8 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg shadow-lg transition-all active:scale-95"
+                >🎯</button>
+              )}
+            </div>
+
             <button
-              onClick={resetAll}
-              className="px-4 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded shadow-sm font-medium"
-            >Reset</button>
+              onClick={isRecording ? stopRecording : startRecording}
+              disabled={(isRunning || isLoading || countdown !== null) && !isRecording}
+              className={`w-full h-8 text-[11px] font-black rounded-lg transition-all shadow-xl active:scale-[0.98] ${
+                countdown !== null ? 'bg-amber-500' : isRecording ? 'bg-red-500 animate-pulse' : 'bg-gradient-to-r from-fuchsia-600 to-purple-700 hover:from-fuchsia-500 hover:to-purple-600 shadow-purple-900/30'
+              } text-white disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed`}
+            >
+              {countdown !== null ? `⏳ ${countdown}` : isRecording ? 'STOP REC' : 'REC & START'}
+            </button>
           </div>
         )}
         
@@ -716,7 +744,6 @@ const RealMapVisualizer = () => {
               Calculating{processingDots}
             </p>
           )}
-          {status === 'success' && <p className="text-green-400 text-sm font-medium">✓ Complete</p>}
           {status === 'no_path' && <p className="text-red-400 text-sm">❌ No connected path found.</p>}
           {status === 'click_too_far' && <p className="text-orange-400 text-sm">⚠️ Too far from road. Click on blue lines!</p>}
           {status === 'error_loading' && <p className="text-red-500 text-sm">❌ Loading failed. Please retry.</p>}
@@ -736,40 +763,28 @@ const RealMapVisualizer = () => {
           >🔄 Try Another Route</button>
         )}
         
-        {/* Hidden during running */}
         {!isRunning && !countdown && (
-          <>
-            {/* Click Guide */}
-            <p className="mt-3 text-xs text-blue-300">💡 Click blue roads to set Start/End points</p>
-            
-            <div className="mt-2 text-xs text-gray-500">
-              Loaded Roads: {graph.ways.length.toLocaleString()}
-            </div>
-            
-            {/* Resize Hint for Shorts Mode */}
+          <div className="mt-3 flex flex-col gap-2">
             {isShortsMode && (
-              <p className="text-[10px] text-purple-200/90 mb-2 leading-tight bg-purple-900/60 p-1.5 rounded border border-purple-400/30">
-                💡 **창이 더 안 줄어들면?** 창의 **높이**를 줄여보세요. 
-                비율에 맞춰 너비도 함께 좁아집니다.
+              <p className="text-[10px] text-purple-200/90 leading-tight bg-purple-900/60 p-2 rounded border border-purple-400/30">
+                💡 **화면에 딱 맞게 녹화하려면?** 브라우저 창의 **높이를 위아래로 더 길게 늘리세요.** 
+                그러면 너비 제한 없이 9:16 비율을 맞출 수 있습니다.
               </p>
             )}
-
-            {/* Record Button */}
-            <button
-              onClick={isRecording ? stopRecording : startRecording}
-              disabled={(isRunning || isLoading || countdown !== null) && !isRecording}
-              className={`mt-3 w-full px-3 py-2 text-sm font-bold rounded ${countdown !== null ? 'bg-yellow-500' : isRecording ? 'bg-red-600 hover:bg-red-500 animate-pulse' : 'bg-purple-600 hover:bg-purple-500'} text-white disabled:bg-gray-600`}
-            >
-              {countdown !== null ? `⏳ ${countdown}` : isRecording ? '⏹️ Stop Recording' : '🎬 Record & Start'}
-            </button>
-          </>
+            <div className="px-1 flex justify-between items-center text-[10px]">
+              <span className="text-blue-300 opacity-80">💡 Click blue roads for path</span>
+              <span className="text-gray-500 font-mono">
+                Roads: {graph.ways.length.toLocaleString()}
+              </span>
+            </div>
+          </div>
         )}
       </div>
       )}
       
       {/* Countdown Overlay - Large center display */}
       {countdown !== null && (
-        <div className="absolute inset-0 z-[1001] flex items-center justify-center pointer-events-none">
+        <div className="absolute inset-0 z-[1002] flex items-center justify-center pointer-events-none">
           <div className="text-9xl font-black text-yellow-400 drop-shadow-2xl animate-pulse">
             {countdown}
           </div>
@@ -780,7 +795,7 @@ const RealMapVisualizer = () => {
       {/* Stats Overlay - Always visible per user request */}
       {/* Stats Overlay - Always visible per user request */}
       <div 
-        className={`draggable-panel absolute top-4 z-[1001] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 max-w-xs transition-all duration-300 ${isDraggingScore ? 'cursor-grabbing' : ''}`}
+        className={`draggable-panel absolute top-4 z-[1000] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 w-[calc(100%-2rem)] max-w-[280px] transition-all duration-300 ${isDraggingScore ? 'cursor-grabbing' : ''}`}
         style={scorePanelPos || (isShortsMode ? { 
           left: 'max(1rem, calc(50vw - (100vh * 9/16 / 2) + 12px))', 
           transform: 'none' 
@@ -792,7 +807,7 @@ const RealMapVisualizer = () => {
           className="text-xl font-bold mb-2 text-cyan-400 cursor-grab active:cursor-grabbing select-none"
           onPointerDown={handleScorePointerDown}
         >
-          Path Finder
+          {city.name.split(' (')[0]}
         </h2>
         <div className="p-2 bg-gray-800 rounded border border-cyan-500 mb-3">
           <div className="text-lg font-bold text-yellow-400">{ALGORITHMS[algorithm].name}</div>

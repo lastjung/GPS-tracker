@@ -13,7 +13,7 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
   const [processingDots, setProcessingDots] = useState('');
   
   // UI Control states
-  const [speed, setSpeed] = useState(25);
+  const [speed, setSpeed] = useState(4);
   const [algorithm, setAlgorithm] = useState('astar');
   const [density, setDensity] = useState(1);
   const [showVisualization, setShowVisualization] = useState(true);
