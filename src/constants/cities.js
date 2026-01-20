@@ -22,5 +22,11 @@ export const CITIES = {
     center: [37.5385, 127.0200], 
     start: { lat: 37.5665, lng: 126.9780 },
     end: { lat: 37.5125, lng: 127.0588 }
+  },
+  barcelona: {
+    name: 'Barcelona (Full Grid)',
+    center: [41.3930, 2.1700], 
+    start: { lat: 41.3650, lng: 2.1650 },
+    end: { lat: 41.4250, lng: 2.1680 }
   }
 };

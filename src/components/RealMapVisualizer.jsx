@@ -91,7 +91,7 @@ const MapClickHandler = ({ graph, start, end, setStart, setEnd, setVisitedEdges,
 
 
 const RealMapVisualizer = () => {
-  const [cityKey, setCityKey] = useState('toronto');
+  const [cityKey, setCityKey] = useState('barcelona');
   const city = CITIES[cityKey];
   const [bounds, setBounds] = useState(null);
   const [delayedStart, setDelayedStart] = useState(false);

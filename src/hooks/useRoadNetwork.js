@@ -1,8 +1,4 @@
 import { useState, useCallback, useRef } from 'react';
-import torontoData from '../data/toronto.json';
-import seoulData from '../data/seoul.json';
-import newYorkData from '../data/new_york.json';
-import tokyoData from '../data/tokyo.json';
 
 // Overpass API fetching logic
 const fetchRoadNetwork = async (bounds, signal) => {
@@ -54,32 +50,40 @@ const fetchRoadNetwork = async (bounds, signal) => {
     }
   }
   
-  // Fallback to local data if all servers fail and we are in Toronto
-  // Check if bounds roughly match Toronto center
+  // Fallback to local data if all servers fail
+  // We use fetch to load data from public/data folder to avoid bundling large JSON files
   const centerLat = (bounds.north + bounds.south) / 2;
   const centerLon = (bounds.east + bounds.west) / 2;
-  // Toronto center approx: 43.66, -79.36
+  
+  const baseUrl = import.meta.env.BASE_URL; // e.g. /GPS-tracker/ or /
+
+  let localFile = null;
+
+  // Toronto approx: 43.66, -79.36
   if (Math.abs(centerLat - 43.66) < 0.2 && Math.abs(centerLon - (-79.36)) < 0.2) {
-    console.warn('Using local fallback data for Toronto.');
-    return torontoData;
+    localFile = 'toronto.json';
   }
-  // Seoul center approx: 37.56, 126.97
-  if (Math.abs(centerLat - 37.56) < 0.2 && Math.abs(centerLon - 126.97) < 0.2) {
-    console.warn('Using local fallback data for Seoul.');
-    return seoulData;
+  // Seoul approx: 37.56, 126.97
+  else if (Math.abs(centerLat - 37.56) < 0.2 && Math.abs(centerLon - 126.97) < 0.2) {
+    localFile = 'seoul.json';
   }
-  // New York center approx: 40.75, -73.98
-  if (Math.abs(centerLat - 40.75) < 0.2 && Math.abs(centerLon - (-73.98)) < 0.2) {
-    console.warn('Using local fallback data for New York.');
-    return newYorkData;
+  // New York approx: 40.75, -73.98
+  else if (Math.abs(centerLat - 40.75) < 0.2 && Math.abs(centerLon - (-73.98)) < 0.2) {
+    localFile = 'new_york.json';
   }
-  // Tokyo center approx: 35.67, 139.77
-  if (Math.abs(centerLat - 35.67) < 0.2 && Math.abs(centerLon - 139.77) < 0.2) {
-    console.warn('Using local fallback data for Tokyo.');
-    return tokyoData;
+  // Tokyo approx: 35.67, 139.77
+  else if (Math.abs(centerLat - 35.67) < 0.2 && Math.abs(centerLon - 139.77) < 0.2) {
+    localFile = 'tokyo.json';
   }
 
-  throw new Error('All Overpass servers failed');
+  if (localFile) {
+    console.warn(`Using local fallback data: ${localFile}`);
+    const response = await fetch(`${baseUrl}data/${localFile}`);
+    if (!response.ok) throw new Error(`Failed to load local data: ${localFile}`);
+    return response.json();
+  }
+
+  throw new Error('All Overpass servers failed and no local data matched');
 };
 
 const buildGraph = (osmData) => {
