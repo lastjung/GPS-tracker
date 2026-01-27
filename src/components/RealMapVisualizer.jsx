@@ -91,7 +91,7 @@ const MapClickHandler = ({ graph, start, end, setStart, setEnd, setVisitedEdges,
 
 
 const RealMapVisualizer = () => {
-  const [cityKey, setCityKey] = useState('barcelona');
+  const [cityKey, setCityKey] = useState('moscow');
   const city = CITIES[cityKey];
   const [bounds, setBounds] = useState(null);
   const [delayedStart, setDelayedStart] = useState(false);
@@ -101,9 +101,10 @@ const RealMapVisualizer = () => {
   const [showMenu, setShowMenu] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [displayMode, setDisplayMode] = useState('Visualize');
-  const [isMapLocked, setIsMapLocked] = useState(true);
+  const [isMapLocked, setIsMapLocked] = useState(false);
   const [isShortsMode, setIsShortsMode] = useState(false);
   const [isPreparing, setIsPreparing] = useState(false);
+  const [isMenuCollapsed, setIsMenuCollapsed] = useState(false);
 
   // Custom Hooks
   const { graph, setGraph, isLoading, error: networkError, setIsLoading, fetchRoadNetwork, buildGraph } = useRoadNetwork(bounds, cityKey);
@@ -186,8 +187,7 @@ const RealMapVisualizer = () => {
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
         const shortsWidth = viewportHeight * 9 / 16;
-        // Padding on one side = (Total width - Shorts Width) / 2
-        hPadding = (viewportWidth - shortsWidth) / 2 + 20; // Reduced buffer to 20 for tighter fit
+        hPadding = (viewportWidth - shortsWidth) / 2 + 20; 
       }
 
       // 0.6s Debounce / Lock for Shorts Mode to prevent double-zoom shaking
@@ -198,15 +198,15 @@ const RealMapVisualizer = () => {
       map.flyToBounds(bounds, { 
         paddingBottomRight: [hPadding, 120],
         paddingTopLeft: [hPadding, 50],
-        duration: isShortsMode ? 0 : 1.5, // Snap in Shorts Mode for stability
-        animate: !isShortsMode // No animation in Shorts Mode to prevent shaking
+        duration: isShortsMode ? 0 : 1.5,
+        animate: !isShortsMode 
       });
 
       if (isShortsMode) {
-        // Run zoom boost once after snap
+        // Standard zoom boost for Shorts Mode
         setTimeout(() => {
           map.setZoom(map.getZoom() + 0.35);
-        }, 50); // Small delay after snap to ensure bounds are settled
+        }, 50); 
       }
     }, [map, city, isShortsMode]);
 
@@ -244,7 +244,14 @@ const RealMapVisualizer = () => {
     setShowMenu(true); 
     setStart(newCity.start);
     setEnd(newCity.end);
-    setBounds(boundsFromPoints(newCity.start, newCity.end, 0.01));
+    
+    // Slight zoom out for Moscow
+    const padding = key === 'moscow' ? 0.03 : 0.01;
+    setBounds(boundsFromPoints(newCity.start, newCity.end, padding));
+    
+    // Default to A* for all cities
+    setAlgorithm('astar');
+    setSpeed(4);
     
     setGraph({ nodes: {}, edges: {}, ways: [] }); 
     setVisitedEdges([]);
@@ -563,16 +570,17 @@ const RealMapVisualizer = () => {
             Path Finder
           </h2>
           <button 
-            onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-            className="p-1 px-2 bg-gray-800 hover:bg-gray-700 rounded border border-gray-600 text-xs transition-colors"
+            onClick={() => setIsMenuCollapsed(!isMenuCollapsed)}
+            className="p-1 hover:bg-gray-700 rounded text-gray-400 transition-colors"
+            title={isMenuCollapsed ? "Expand" : "Shrink"}
           >
-            {isSettingsOpen ? '▲ Close' : '⚙️ Settings'}
+            {isMenuCollapsed ? '🔼' : '🔽'}
           </button>
         </div>
         
-        {/* Collapsible Settings Content */}
-        {isSettingsOpen && !isRunning && !countdown && (
-          <div className="overflow-hidden transition-all duration-300">
+        {/* Settings Content - Always Visible when not collapsed */}
+        {!isRunning && !countdown && !isMenuCollapsed && (
+          <div className="overflow-hidden">
             {/* City Selector */}
             <div className="flex flex-col gap-1 mb-3">
               <label className="text-xs text-gray-400">City: <span className="text-cyan-300 font-bold">{city.name}</span></label>
@@ -586,6 +594,18 @@ const RealMapVisualizer = () => {
                   <option key={key} value={key}>{c.name}</option>
                 ))}
               </select>
+            </div>
+            
+            {/* Coordinates Display */}
+            <div className="flex flex-col gap-1 mb-3 bg-gray-900/50 p-2 rounded border border-gray-700/50 font-mono text-[10px]">
+              <div className="flex justify-between text-green-400">
+                <span>Start (S):</span>
+                <span>{start ? `${start.lat.toFixed(4)}, ${start.lng.toFixed(4)}` : 'Not Set'}</span>
+              </div>
+              <div className="flex justify-between text-red-400">
+                <span>End (E):</span>
+                <span>{end ? `${end.lat.toFixed(4)}, ${end.lng.toFixed(4)}` : 'Not Set'}</span>
+              </div>
             </div>
 
             {/* Mode Toggle */}
@@ -675,19 +695,18 @@ const RealMapVisualizer = () => {
           </div>
         )}
 
-        {/* Current Algorithm Name & Description - Only show name when collapsed */}
-        <div className={`${isSettingsOpen ? 'mb-3' : 'mb-2'} p-2 bg-gray-800 rounded border border-cyan-500`}>
-          <div className="text-md font-bold text-yellow-400 flex justify-between items-center">
-            {ALGORITHMS[algorithm].name}
-            {!isSettingsOpen && !isRunning && (
-              <span className="text-[10px] text-gray-500 font-normal italic">Selected</span>
-            )}
+        {/* Current Algorithm Name & Description - Always visible status when not collapsed */}
+        {!isMenuCollapsed && (
+          <div className="mb-3 p-2 bg-gray-800 rounded border border-cyan-500">
+            <div className="text-md font-bold text-yellow-400 flex justify-between items-center">
+              {ALGORITHMS[algorithm].name}
+            </div>
+            {!isRunning && <div className="text-[10px] text-gray-400 mt-1">{ALGORITHMS[algorithm].description}</div>}
           </div>
-          {isSettingsOpen && !isRunning && <div className="text-[10px] text-gray-400 mt-1">{ALGORITHMS[algorithm].description}</div>}
-        </div>
+        )}
         
-        {/* Grouped Action Area */}
-        {!isRunning && !countdown && (
+        {/* Grouped Action Area - Hidden when collapsed */}
+        {!isRunning && !countdown && !isMenuCollapsed && (
           <div className="flex flex-col gap-2 p-3 bg-gray-800/50 rounded-lg border border-gray-700 shadow-inner">
             <p className={`text-[10px] text-center italic ${status === 'success' ? 'text-green-400 font-bold' : 'text-gray-400'}`}>
               {!start ? 'Set START on map' : !end ? 'Set END on map' : status === 'success' ? '✓ Complete' : 'Ready to Navigate'}
