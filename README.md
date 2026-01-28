@@ -1,21 +1,27 @@
-# React + Vite
+# GPS Tracker & Algorithm Visualizer
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## 🌐 Live Demo
 
-Currently, two official plugins are available:
+[**👉 Try it Live**](https://lastjung.github.io/GPS-tracker/)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+A React application for visualizing GPS tracking simulations and pathfinding algorithms on real-world map data.
 
-## React Compiler
+## 🏙️ Supported Cities
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+We provide optimized map data for the following cities, featuring various urban patterns like grids, radial roads, and island structures.
 
-## Expanding the ESLint configuration
+- **🇨🇦 Toronto** - Clean urban layout
+- **🇺🇸 New York (Manhattan)** - Dense grid system
+- **🇯🇵 Tokyo (Bay)** - Coastal urban mix
+- **🇰🇷 Seoul** - River crossing & complex roads
+- **🇪🇸 Barcelona** - Perfect grid ("Eixample")
+- **🇫🇷 Paris** - Radial improvements (Arc de Triomphe)
+- **🇬🇧 London** - Historic winding roads & bridges
+- **🇺🇸 San Francisco** - Hilly terrain & Golden Gate Bridge
+- **🇷🇺 Moscow** - Central ring roads
+- **🇦🇪 Dubai (Palm Jumeirah)** - Unique artificial island pattern
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
-
-## Install & Run
+## 🛠️ Install & Run
 
 ### npm (default)
 
@@ -24,9 +30,7 @@ npm install
 npm run dev
 ```
 
-### pnpm (optional, saves disk space)
-
-pnpm stores packages in a shared store and links them into each project.
+### pnpm (optional status for faster install)
 
 ```bash
 npm i -g pnpm

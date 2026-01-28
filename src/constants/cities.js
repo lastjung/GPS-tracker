@@ -52,5 +52,11 @@ export const CITIES = {
     center: [55.7539, 37.6208],
     start: { lat: 55.7650, lng: 37.6250 },
     end: { lat: 55.7420, lng: 37.6150 }
+  },
+  dubai: {
+    name: 'Dubai (Palm Jumeirah)',
+    center: [25.1170, 55.1300],
+    start: { lat: 25.1030, lng: 55.1550 }, // Mainland Gateway
+    end: { lat: 25.1305, lng: 55.1170 }    // Atlantis The Palm
   }
 };

@@ -75,6 +75,30 @@ const fetchRoadNetwork = async (bounds, signal) => {
   else if (Math.abs(centerLat - 35.67) < 0.2 && Math.abs(centerLon - 139.77) < 0.2) {
     localFile = 'tokyo.json';
   }
+  // Barcelona approx: 41.39, 2.17
+  else if (Math.abs(centerLat - 41.39) < 0.2 && Math.abs(centerLon - 2.17) < 0.2) {
+    localFile = 'barcelona.json';
+  }
+  // Paris approx: 48.87, 2.29
+  else if (Math.abs(centerLat - 48.87) < 0.2 && Math.abs(centerLon - 2.29) < 0.2) {
+    localFile = 'paris.json';
+  }
+  // London approx: 51.50, -0.07
+  else if (Math.abs(centerLat - 51.50) < 0.2 && Math.abs(centerLon - (-0.07)) < 0.2) {
+    localFile = 'london.json';
+  }
+  // San Francisco approx: 37.81, -122.47
+  else if (Math.abs(centerLat - 37.81) < 0.2 && Math.abs(centerLon - (-122.47)) < 0.2) {
+    localFile = 'sanfrancisco.json';
+  }
+  // Moscow approx: 55.75, 37.62
+  else if (Math.abs(centerLat - 55.75) < 0.2 && Math.abs(centerLon - 37.62) < 0.2) {
+    localFile = 'moscow.json';
+  }
+  // Dubai approx: 25.11, 55.13
+  else if (Math.abs(centerLat - 25.11) < 0.2 && Math.abs(centerLon - 55.13) < 0.2) {
+    localFile = 'dubai.json';
+  }
 
   if (localFile) {
     console.warn(`Using local fallback data: ${localFile}`);

@@ -91,7 +91,7 @@ const MapClickHandler = ({ graph, start, end, setStart, setEnd, setVisitedEdges,
 
 
 const RealMapVisualizer = () => {
-  const [cityKey, setCityKey] = useState('moscow');
+  const [cityKey, setCityKey] = useState('dubai');
   const city = CITIES[cityKey];
   const [bounds, setBounds] = useState(null);
   const [delayedStart, setDelayedStart] = useState(false);
@@ -340,12 +340,18 @@ const RealMapVisualizer = () => {
   // Move cleanup logic to a stable ref to avoid closure issues in the countdown effect
   const onStopCallback = useCallback(() => {
     if (recordedChunksRef.current.length > 0) {
-      const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+      // Use the actual mimeType used by the recorder, or fallback to default
+      const mimeType = mediaRecorderRef.current?.mimeType || 'video/webm';
+      const blob = new Blob(recordedChunksRef.current, { type: mimeType });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `gps-tracker-${Date.now()}.webm`;
+      // Determine extension based on mimeType
+      const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+      a.download = `gps-tracker-${Date.now()}.${ext}`;
+      document.body.appendChild(a); // Append to body to ensure click works in some browsers
       a.click();
+      document.body.removeChild(a); // Cleanup
       setTimeout(() => URL.revokeObjectURL(url), 100);
     }
     setIsRecording(false);
@@ -359,9 +365,28 @@ const RealMapVisualizer = () => {
       if (pendingStreamRef.current) {
         setIsRecording(true);
         const stream = pendingStreamRef.current;
+        
+        // Robust mimeType selection for Mac/Windows compatibility
+        const mimeTypes = [
+          'video/webm;codecs=vp9',
+          'video/webm;codecs=vp8',
+          'video/webm',
+          'video/mp4' // For Safari mostly
+        ];
+        
+        const selectedMime = mimeTypes.find(type => MediaRecorder.isTypeSupported(type)) || '';
+        
+        if (!selectedMime) {
+          console.error('No supported video mimeType found for MediaRecorder');
+          alert('Screen recording is not supported in this browser.');
+          return;
+        }
+
+        console.log(`Starting recording with mimeType: ${selectedMime}`);
+
         const recorder = new MediaRecorder(stream, {
-          mimeType: 'video/webm;codecs=vp9',
-          videoBitsPerSecond: 5000000
+          mimeType: selectedMime,
+          videoBitsPerSecond: 5000000 // 5Mbps
         });
         mediaRecorderRef.current = recorder;
         
