@@ -46,7 +46,8 @@ const RoadLoader = ({ setBounds, isMapLocked }) => {
 };
 
 // Map click handler that snaps to nearest road (auto-toggle)
-const MapClickHandler = ({ graph, start, end, setStart, setEnd, setVisitedEdges, setFinalPath, setStatus, isRunning, showMenu, setShowMenu }) => {
+// Map click handler that snaps to nearest road (auto-toggle)
+const MapClickHandler = ({ graph, waypoints, setWaypoints, setVisitedEdges, setFinalPath, setStatus, isRunning, showMenu, setShowMenu, city }) => {
   useMapEvents({
       click: (e) => {
         if (isRunning) return;
@@ -67,28 +68,100 @@ const MapClickHandler = ({ graph, start, end, setStart, setEnd, setVisitedEdges,
         }
         
         setStatus('idle');
-        // Auto-toggle: if no start → set start, if start but no end → set end, else reset
-        if (!start) {
-          setStart(snapped);
-          setVisitedEdges([]);
-          setFinalPath([]);
-        } else if (!end) {
-          setEnd(snapped);
-          setVisitedEdges([]);
-          setFinalPath([]);
+        
+        // Check if current waypoints are the default city ones
+        // If so, replace them with the new click (Start user's own path)
+        const isDefault = waypoints.length === 2 && 
+                          city && 
+                          waypoints[0].lat === city.start.lat && waypoints[0].lng === city.start.lng &&
+                          waypoints[1].lat === city.end.lat && waypoints[1].lng === city.end.lng;
+
+        if (isDefault) {
+          setWaypoints([snapped]);
         } else {
-          // Reset and set new start
-          setStart(snapped);
-          setEnd(null);
-          setVisitedEdges([]);
-          setFinalPath([]);
+          // Append new waypoint
+          setWaypoints([...waypoints, snapped]);
         }
+        
+        // Reset path visualization when modifying points
+        setVisitedEdges([]);
+        setFinalPath([]);
       }
   });
   return null;
 };
 
 
+
+// Map flyTo logic when city changes - Enhanced to respect Shorts Mode padding
+const ChangeView = ({ center, isMapLocked, isShortsMode, city, waypoints }) => {
+  const map = useMap();
+  const lastFitRef = useRef(0);
+  
+  const fitToRoute = useCallback(() => {
+    // Fit to all waypoints
+    if (!city || !waypoints || waypoints.length === 0) return;
+    
+    const latLngs = waypoints.map(p => [p.lat, p.lng]);
+    const bounds = latLngs.length > 1 
+      ? latLngs 
+      : [[waypoints[0].lat, waypoints[0].lng], [waypoints[0].lat, waypoints[0].lng]]; // Single point fallback
+    
+    // Dynamic horizontal padding for Shorts Mode
+    let hPadding = 50;
+    if (isShortsMode) {
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const shortsWidth = viewportHeight * 9 / 16;
+      hPadding = (viewportWidth - shortsWidth) / 2 + 20; 
+    }
+
+    // 0.6s Debounce / Lock for Shorts Mode to prevent double-zoom shaking
+    const now = Date.now();
+    if (isShortsMode && now - lastFitRef.current < 600) return;
+    lastFitRef.current = now;
+
+    map.flyToBounds(bounds, { 
+      paddingBottomRight: [hPadding, 120],
+      paddingTopLeft: [hPadding, 50],
+      duration: isShortsMode ? 0 : 1.5,
+      animate: !isShortsMode 
+    });
+
+    if (isShortsMode) {
+      // Standard zoom boost for Shorts Mode
+      setTimeout(() => {
+        map.setZoom(map.getZoom() + 0.35);
+      }, 50); 
+    }
+  }, [map, city, isShortsMode, waypoints]);
+
+  useEffect(() => {
+    if (!center) return;
+    const now = Date.now();
+    if (now - lastFitRef.current < 600) return;
+    lastFitRef.current = now;
+    const delay = isShortsMode ? 250 : 0;
+    const timer = setTimeout(fitToRoute, delay);
+    return () => clearTimeout(timer);
+  }, [center, isShortsMode, fitToRoute]);
+
+  useEffect(() => {
+    if (isMapLocked) {
+      map.dragging.disable();
+      map.touchZoom.disable();
+      map.doubleClickZoom.disable();
+      map.scrollWheelZoom.disable();
+    } else {
+      map.dragging.enable();
+      map.touchZoom.enable();
+      map.doubleClickZoom.enable();
+      map.scrollWheelZoom.enable();
+    }
+  }, [isMapLocked, map]);
+
+  return null;
+};
 
 const RealMapVisualizer = () => {
   const [cityKey, setCityKey] = useState('dubai');
@@ -108,8 +181,13 @@ const RealMapVisualizer = () => {
 
   // Custom Hooks
   const { graph, setGraph, isLoading, error: networkError, setIsLoading, fetchRoadNetwork, buildGraph } = useRoadNetwork(bounds, cityKey);
-  const [start, setStart] = useState(city.start);
-  const [end, setEnd] = useState(city.end);
+  
+  // Waypoints state (supports Multi-Path)
+  const [waypoints, setWaypoints] = useState([city.start, city.end]);
+  
+  // Derived for hook compatibility (first and last)
+  const start = waypoints[0];
+  const end = waypoints.length > 1 ? waypoints[waypoints.length - 1] : null;
 
   const {
     isRunning,
@@ -168,86 +246,41 @@ const RealMapVisualizer = () => {
   const [isDraggingScore, setIsDraggingScore] = useState(false);
   const scoreDragOffset = useRef({ x: 0, y: 0 });
   
-  // Map flyTo logic when city changes - Enhanced to respect Shorts Mode padding
-  const ChangeView = ({ center, isMapLocked, isShortsMode, city }) => {
-    const map = useMap();
-    const lastFitRef = useRef(0);
-    
-    const fitToRoute = useCallback(() => {
-      if (!city || !city.start || !city.end) return;
-      
-      const bounds = [
-        [city.start.lat, city.start.lng],
-        [city.end.lat, city.end.lng]
-      ];
-      
-      // Dynamic horizontal padding for Shorts Mode
-      let hPadding = 50;
-      if (isShortsMode) {
-        const viewportWidth = window.innerWidth;
-        const viewportHeight = window.innerHeight;
-        const shortsWidth = viewportHeight * 9 / 16;
-        hPadding = (viewportWidth - shortsWidth) / 2 + 20; 
-      }
 
-      // 0.6s Debounce / Lock for Shorts Mode to prevent double-zoom shaking
-      const now = Date.now();
-      if (isShortsMode && now - lastFitRef.current < 600) return;
-      lastFitRef.current = now;
 
-      map.flyToBounds(bounds, { 
-        paddingBottomRight: [hPadding, 120],
-        paddingTopLeft: [hPadding, 50],
-        duration: isShortsMode ? 0 : 1.5,
-        animate: !isShortsMode 
-      });
 
-      if (isShortsMode) {
-        // Standard zoom boost for Shorts Mode
-        setTimeout(() => {
-          map.setZoom(map.getZoom() + 0.35);
-        }, 50); 
-      }
-    }, [map, city, isShortsMode]);
-
-    useEffect(() => {
-      if (!center) return;
-      const now = Date.now();
-      if (now - lastFitRef.current < 600) return;
-      lastFitRef.current = now;
-      const delay = isShortsMode ? 250 : 0;
-      const timer = setTimeout(fitToRoute, delay);
-      return () => clearTimeout(timer);
-    }, [center, isShortsMode, fitToRoute]);
-
-    useEffect(() => {
-      if (isMapLocked) {
-        map.dragging.disable();
-        map.touchZoom.disable();
-        map.doubleClickZoom.disable();
-        map.scrollWheelZoom.disable();
-      } else {
-        map.dragging.enable();
-        map.touchZoom.enable();
-        map.doubleClickZoom.enable();
-        map.scrollWheelZoom.enable();
-      }
-    }, [isMapLocked, map]);
-
-    return null;
-  };
 
   const handleCityChange = (key) => {
     stopAlgorithm();
     const newCity = CITIES[key];
     setCityKey(key);
     setShowMenu(true); 
-    setStart(newCity.start);
-    setEnd(newCity.end);
     
-    // Slight zoom out for Moscow
-    const padding = key === 'moscow' ? 0.03 : 0.01;
-    setBounds(boundsFromPoints(newCity.start, newCity.end, padding));
+    // Support predefined waypoints (e.g. San Francisco scenic route)
+    if (newCity.waypoints) {
+      setWaypoints(newCity.waypoints);
+      
+      // Calculate bounds covering all waypoints
+      const lats = newCity.waypoints.map(p => p.lat);
+      const lngs = newCity.waypoints.map(p => p.lng);
+      const minLat = Math.min(...lats);
+      const maxLat = Math.max(...lats);
+      const minLng = Math.min(...lngs);
+      const maxLng = Math.max(...lngs);
+      
+      const padding = 0.02;
+      setBounds({
+        south: minLat - padding,
+        north: maxLat + padding,
+        west: minLng - padding,
+        east: maxLng + padding
+      });
+    } else {
+      setWaypoints([newCity.start, newCity.end]);
+      // Slight zoom out for Moscow
+      const padding = key === 'moscow' ? 0.03 : 0.01;
+      setBounds(boundsFromPoints(newCity.start, newCity.end, padding));
+    }
     
     // Default to A* for all cities
     setAlgorithm('astar');
@@ -326,7 +359,7 @@ const RealMapVisualizer = () => {
   
   // Refined run trigger
   const handleStart = useCallback(() => {
-    if (!start || !end || Object.keys(graph.nodes).length === 0) return;
+    if (waypoints.length < 2 || Object.keys(graph.nodes).length === 0) return;
     
     // If delayed start (for recording)
     if (delayedStart && countdown === null) {
@@ -334,8 +367,8 @@ const RealMapVisualizer = () => {
       return;
     }
 
-    runAlgorithmCore(algoFns);
-  }, [start, end, graph, delayedStart, countdown, runAlgorithmCore]);
+    runAlgorithmCore(algoFns, waypoints);
+  }, [waypoints, graph, delayedStart, countdown, runAlgorithmCore]);
 
   // Move cleanup logic to a stable ref to avoid closure issues in the countdown effect
   const onStopCallback = useCallback(() => {
@@ -406,13 +439,13 @@ const RealMapVisualizer = () => {
       } else {
         setIsPreparing(false);
       }
-      runAlgorithmCore(algoFns);
+      runAlgorithmCore(algoFns, waypoints);
     } else if (countdown !== null && countdown > 0) {
       playBeep(880 + (3 - countdown) * 220);
       const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
       return () => clearTimeout(timer);
     }
-  }, [countdown, runAlgorithmCore, setIsRecording, onStopCallback]);
+  }, [countdown, runAlgorithmCore, setIsRecording, onStopCallback, waypoints]);
 
   // Stop recording  
   const stopRecording = useCallback(() => {
@@ -455,8 +488,7 @@ const RealMapVisualizer = () => {
   const resetAll = useCallback(() => {
     stopAlgorithm();
     resetAlgorithm();
-    setStart(city.start);
-    setEnd(city.end);
+    setWaypoints([city.start, city.end]);
     setShowMenu(true); // Restore menu on reset
     setCountdown(null);
     setMenuPanelPos(null);
@@ -621,16 +653,17 @@ const RealMapVisualizer = () => {
               </select>
             </div>
             
-            {/* Coordinates Display */}
+            {/* Coordinates Display - Multi-waypoint aware */}
             <div className="flex flex-col gap-1 mb-3 bg-gray-900/50 p-2 rounded border border-gray-700/50 font-mono text-[10px]">
-              <div className="flex justify-between text-green-400">
-                <span>Start (S):</span>
-                <span>{start ? `${start.lat.toFixed(4)}, ${start.lng.toFixed(4)}` : 'Not Set'}</span>
-              </div>
-              <div className="flex justify-between text-red-400">
-                <span>End (E):</span>
-                <span>{end ? `${end.lat.toFixed(4)}, ${end.lng.toFixed(4)}` : 'Not Set'}</span>
-              </div>
+              {waypoints.map((pt, idx) => (
+                <div key={idx} className="flex justify-between">
+                  <span style={{ color: idx === 0 ? '#4ade80' : idx === waypoints.length - 1 ? '#f87171' : '#60a5fa' }}>
+                    {idx === 0 ? 'Start (S)' : idx === waypoints.length - 1 ? 'End (E)' : `Point ${idx}`}
+                  </span>
+                  <span className="text-gray-300">{`${pt.lat.toFixed(4)}, ${pt.lng.toFixed(4)}`}</span>
+                </div>
+              ))}
+              {waypoints.length === 0 && <span className="text-gray-500 italic">Click map to add points</span>}
             </div>
 
             {/* Mode Toggle */}
@@ -734,28 +767,34 @@ const RealMapVisualizer = () => {
         {!isRunning && !countdown && !isMenuCollapsed && (
           <div className="flex flex-col gap-2 p-3 bg-gray-800/50 rounded-lg border border-gray-700 shadow-inner">
             <p className={`text-[10px] text-center italic ${status === 'success' ? 'text-green-400 font-bold' : 'text-gray-400'}`}>
-              {!start ? 'Set START on map' : !end ? 'Set END on map' : status === 'success' ? '✓ Complete' : 'Ready to Navigate'}
+              {waypoints.length < 2 ? 'Add at least 2 points' : status === 'success' ? '✓ Complete' : `Ready: ${waypoints.length} points`}
             </p>
             
             <div className="flex gap-2 items-stretch">
               <button
                 onClick={handleStart}
-                disabled={!start || !end || isLoading || countdown !== null}
+                disabled={waypoints.length < 2 || isLoading || countdown !== null}
                 className={`h-8 rounded-lg font-bold flex-[2] text-xs text-white transition-all duration-300 transform active:scale-95 shadow-lg ${
-                  !start || !end || isLoading || graph.ways.length === 0
+                  waypoints.length < 2 || isLoading || graph.ways.length === 0
                     ? 'bg-gray-800 text-gray-600 cursor-not-allowed border border-gray-700' 
                     : 'bg-gradient-to-br from-emerald-400 to-teal-600 hover:from-emerald-300 hover:to-teal-500 shadow-emerald-900/40 hover:shadow-emerald-500/50'
                 }`}
               >
-                {!start || !end ? 'Select' : (isLoading || graph.ways.length === 0 ? 'Wait' : 'Start')}
+                {waypoints.length < 2 ? 'Select Points' : (isLoading || graph.ways.length === 0 ? 'Wait' : 'Start')}
               </button>
+              
+              <button
+                onClick={() => setWaypoints([])}
+                className="px-2 h-8 bg-red-800/50 hover:bg-red-700 text-gray-300 rounded-lg shadow-md font-bold text-xs transition-all border border-red-900 active:scale-95"
+                title="Clear all points"
+              >Clear</button>
               
               <button
                 onClick={resetAll}
                 className="px-4 h-8 bg-gray-700 hover:bg-gray-600 text-gray-200 rounded-lg shadow-md font-bold text-xs transition-all border border-gray-600 active:scale-95"
               >Reset</button>
 
-              {isShortsMode && start && end && (
+              {isShortsMode && waypoints.length >= 2 && (
                 <button
                   onClick={() => {
                     setIsShortsMode(false);
@@ -877,7 +916,7 @@ const RealMapVisualizer = () => {
         {!recordMode && !isRunning && !countdown && !isRecording && showMenu && (
           <ZoomControl position="topright" />
         )}
-        <ChangeView center={city.center} isMapLocked={isMapLocked} isShortsMode={isShortsMode} city={city} />
+        <ChangeView center={city.center} isMapLocked={isMapLocked} isShortsMode={isShortsMode} city={city} waypoints={waypoints} />
         <TileLayer
           attribution='&copy; <a href="https://carto.com/">CARTO</a>'
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
@@ -885,16 +924,15 @@ const RealMapVisualizer = () => {
         <RoadLoader setBounds={setBounds} isMapLocked={isMapLocked} />
         <MapClickHandler
           graph={graph}
-          start={start}
-          end={end}
-          setStart={setStart}
-          setEnd={setEnd}
+          waypoints={waypoints}
+          setWaypoints={setWaypoints}
           setVisitedEdges={setVisitedEdges}
           setFinalPath={setFinalPath}
           setStatus={setStatus}
           isRunning={isRunning}
           showMenu={showMenu}
           setShowMenu={setShowMenu}
+          city={city}
         />
         
         {/* Boundary Box - Removed for cleaner recording */}
@@ -946,9 +984,19 @@ const RealMapVisualizer = () => {
           </>
         )}
         
-        {/* Start/End markers */}
-        {start && <CircleMarker center={start} radius={8} fillColor="#22c55e" fillOpacity={1} color="#fff" weight={2} />}
-        {end && <CircleMarker center={end} radius={8} fillColor="#ef4444" fillOpacity={1} color="#fff" weight={2} />}
+        {/* Start/End/Waypoints markers */}
+        {/* Start/End/Waypoints markers */}
+        {waypoints.map((pt, i) => (
+           <CircleMarker 
+             key={i} 
+             center={pt} 
+             radius={8} 
+             fillColor={i === 0 ? "#22c55e" : "#ef4444"} 
+             fillOpacity={1} 
+             color="#fff" 
+             weight={2} 
+           />
+        ))}
       </MapContainer>
     </div>
   );

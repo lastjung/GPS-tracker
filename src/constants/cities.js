@@ -42,10 +42,23 @@ export const CITIES = {
     end: { lat: 51.5010, lng: -0.0720 }    // Southwark (Across the river)
   },
   sanfrancisco: {
-    name: 'San Francisco (Golden Gate)',
-    center: [37.8150, -122.4750],
-    start: { lat: 37.8000, lng: -122.4600 }, // Presidio
-    end: { lat: 37.8350, lng: -122.4850 }    // Marin Headlands (Across the bridge)
+    name: 'San Francisco (Grand Tour)',
+    center: [37.7750, -122.4450], // Centered to cover the whole extended route
+    waypoints: [
+      { lat: 37.8199, lng: -122.4783 }, // 1. Golden Gate Bridge
+      { lat: 37.8017, lng: -122.4479 }, // 2. Palace of Fine Arts
+      { lat: 37.8019, lng: -122.4189 }, // 3. Lombard Street
+      { lat: 37.8085, lng: -122.4155 }, // 4. Fisherman's Wharf
+      { lat: 37.8024, lng: -122.4060 }, // 5. Coit Tower
+      { lat: 37.7879, lng: -122.4077 }, // 6. Union Square
+      { lat: 37.7763, lng: -122.4329 }, // 7. Painted Ladies
+      { lat: 37.7792, lng: -122.4192 }, // 8. SF City Hall (Civic Center)
+      { lat: 37.7786, lng: -122.3897 }, // 9. Oracle Park (Waterfront)
+      { lat: 37.7726, lng: -122.4603 }, // 10. Conservatory of Flowers (Golden Gate Park)
+      { lat: 37.7784, lng: -122.5139 }  // 11. Cliff House (Ocean End)
+    ],
+    start: { lat: 37.8199, lng: -122.4783 }, 
+    end: { lat: 37.7784, lng: -122.5139 }
   },
   moscow: {
     name: 'Moscow (Red Square)',
