@@ -42,23 +42,23 @@ export const CITIES = {
     end: { lat: 51.5010, lng: -0.0720 }    // Southwark (Across the river)
   },
   sanfrancisco: {
-    name: 'San Francisco (Grand Tour)',
-    center: [37.7750, -122.4450], // Centered to cover the whole extended route
+    name: 'San Francisco (Mega Tour)',
+    center: [37.7749, -122.4194], 
     waypoints: [
-      { lat: 37.8199, lng: -122.4783 }, // 1. Golden Gate Bridge
-      { lat: 37.8017, lng: -122.4479 }, // 2. Palace of Fine Arts
-      { lat: 37.8019, lng: -122.4189 }, // 3. Lombard Street
-      { lat: 37.8085, lng: -122.4155 }, // 4. Fisherman's Wharf
-      { lat: 37.8024, lng: -122.4060 }, // 5. Coit Tower
-      { lat: 37.7879, lng: -122.4077 }, // 6. Union Square
-      { lat: 37.7763, lng: -122.4329 }, // 7. Painted Ladies
-      { lat: 37.7792, lng: -122.4192 }, // 8. SF City Hall (Civic Center)
-      { lat: 37.7786, lng: -122.3897 }, // 9. Oracle Park (Waterfront)
-      { lat: 37.7726, lng: -122.4603 }, // 10. Conservatory of Flowers (Golden Gate Park)
-      { lat: 37.7784, lng: -122.5139 }  // 11. Cliff House (Ocean End)
+      { lat: 37.8324, lng: -122.4795 }, // 1. Golden Gate Bridge (Vista Point North)
+      { lat: 37.8021, lng: -122.4487 }, // 2. Palace of Fine Arts
+      { lat: 37.8021, lng: -122.4194 }, // 3. Lombard Street (Hyde & Lombard)
+      { lat: 37.8024, lng: -122.4058 }, // 4. Coit Tower (Telegraph Hill)
+      { lat: 37.8087, lng: -122.4098 }, // 5. Pier 39
+      { lat: 37.7786, lng: -122.3893 }, // 6. Oracle Park (Waterfront)
+      { lat: 37.7544, lng: -122.4439 }, // 7. Twin Peaks (The most curvy road)
+      { lat: 37.7694, lng: -122.4862 }, // 8. Golden Gate Park (Music Concourse)
+      { lat: 37.7784, lng: -122.5139 }, // 9. Cliff House (Ocean Beach)
+      { lat: 37.7340, lng: -122.5020 }, // 10. Zoo/Lake Merced (Southwest edge)
+      { lat: 37.7763, lng: -122.4328 }  // 11. Painted Ladies (End)
     ],
-    start: { lat: 37.8199, lng: -122.4783 }, 
-    end: { lat: 37.7784, lng: -122.5139 }
+    start: { lat: 37.8324, lng: -122.4795 }, 
+    end: { lat: 37.7763, lng: -122.4328 }
   },
   moscow: {
     name: 'Moscow (Red Square)',

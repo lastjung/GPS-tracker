@@ -209,6 +209,8 @@ const RealMapVisualizer = () => {
     setDensity,
     showVisualization,
     setShowVisualization,
+    isTurboMode,
+    setIsTurboMode,
     run: runAlgorithmCore,
     stop: stopAlgorithm,
     reset: resetAlgorithm
@@ -749,6 +751,14 @@ const RealMapVisualizer = () => {
                 />
                 <label htmlFor="shortsToggle" className="text-xs text-purple-300 font-bold cursor-pointer">9:16 Shorts Mode</label>
               </div>
+              <div className="flex items-center gap-2">
+                <input 
+                  type="checkbox" id="turboToggle" checked={isTurboMode} 
+                  onChange={(e) => setIsTurboMode(e.target.checked)}
+                  className="w-4 h-4 rounded accent-yellow-500"
+                />
+                <label htmlFor="turboToggle" className="text-xs text-yellow-300 font-bold cursor-pointer">Tube Mode (Acceleration)</label>
+              </div>
             </div>
           </div>
         )}
@@ -910,6 +920,7 @@ const RealMapVisualizer = () => {
         center={city.center} 
         zoom={13} 
         zoomControl={false}
+        preferCanvas={true}
         className={`w-full h-full ${isRunning ? 'map-dimmed' : 'map-normal'}`}
       >
         {/* Hide ZoomControl when running/recording/countdown, match menu behavior */}

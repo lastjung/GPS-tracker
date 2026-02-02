@@ -17,6 +17,7 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
   const [algorithm, setAlgorithm] = useState('astar');
   const [density, setDensity] = useState(1);
   const [showVisualization, setShowVisualization] = useState(true);
+  const [isTurboMode, setIsTurboMode] = useState(false);
 
   const animationRef = useRef(null);
   const dotsIntervalRef = useRef(null);
@@ -138,7 +139,11 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
     const step = () => {
       let iterations = 0;
       let lastValue = null;
-      const stepsPerTick = speed <= 10 ? 20 : speed <= 25 ? 50 : 120;
+      let baseSteps = speed <= 10 ? 20 : speed <= 25 ? 50 : 120;
+      
+      // Turbo Mode: Scale iteration count by the number of visited edges to prevent late-stage lag
+      const turboFactor = isTurboMode ? Math.max(1, Math.floor((accumulatedVisited.length + 1000) / 1000)) : 1;
+      const stepsPerTick = baseSteps * turboFactor;
       
       while (iterations < stepsPerTick) {
         const { value, done } = gen.next();
@@ -219,7 +224,7 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
 
   return {
     isRunning, status, setStatus, stats, setStats, visitedEdges, setVisitedEdges, finalPath, setFinalPath, processingDots, setProcessingDots,
-    speed, setSpeed, algorithm, setAlgorithm, density, setDensity, showVisualization, setShowVisualization,
+    speed, setSpeed, algorithm, setAlgorithm, density, setDensity, showVisualization, setShowVisualization, isTurboMode, setIsTurboMode,
     run, stop, reset
   };
 };
