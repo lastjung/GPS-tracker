@@ -69,18 +69,21 @@ const MapClickHandler = ({ graph, waypoints, setWaypoints, setVisitedEdges, setF
         
         setStatus('idle');
         
-        // Check if current waypoints are the default city ones
-        // If so, replace them with the new click (Start user's own path)
         const isDefault = waypoints.length === 2 && 
                           city && 
                           waypoints[0].lat === city.start.lat && waypoints[0].lng === city.start.lng &&
                           waypoints[1].lat === city.end.lat && waypoints[1].lng === city.end.lng;
 
+        // Extract road name from graph if available
+        const id = snapped.id;
+        const roadName = graph.nodeNames?.[id] || `Waypoint ${isDefault ? 1 : waypoints.length + 1}`;
+        const newPoint = { ...snapped, name: roadName };
+
         if (isDefault) {
-          setWaypoints([snapped]);
+          setWaypoints([newPoint]);
         } else {
           // Append new waypoint
-          setWaypoints([...waypoints, snapped]);
+          setWaypoints([...waypoints, newPoint]);
         }
         
         // Reset path visualization when modifying points
@@ -164,7 +167,7 @@ const ChangeView = ({ center, isMapLocked, isShortsMode, city, waypoints }) => {
 };
 
 const RealMapVisualizer = () => {
-  const [cityKey, setCityKey] = useState('dubai');
+  const [cityKey, setCityKey] = useState('newyork');
   const city = CITIES[cityKey];
   const [bounds, setBounds] = useState(null);
   const [delayedStart, setDelayedStart] = useState(false);
@@ -183,7 +186,7 @@ const RealMapVisualizer = () => {
   const { graph, setGraph, isLoading, error: networkError, setIsLoading, fetchRoadNetwork, buildGraph } = useRoadNetwork(bounds, cityKey);
   
   // Waypoints state (supports Multi-Path)
-  const [waypoints, setWaypoints] = useState([city.start, city.end]);
+  const [waypoints, setWaypoints] = useState(city.waypoints || [city.start, city.end]);
   
   // Derived for hook compatibility (first and last)
   const start = waypoints[0];
@@ -201,6 +204,8 @@ const RealMapVisualizer = () => {
     setFinalPath,
     processingDots,
     setProcessingDots,
+    currentDestName,
+    setCurrentDestName,
     speed,
     setSpeed,
     algorithm,
@@ -226,6 +231,19 @@ const RealMapVisualizer = () => {
   const lastFitRef = useRef(0);
   const cityKeyRef = useRef(cityKey);
 
+  // Sync HUD name with current context (Setup vs Running vs Success)
+  useEffect(() => {
+    if (!isRunning) {
+      if (status === 'success') {
+        setCurrentDestName('ARRIVED');
+      } else if (waypoints.length >= 2) {
+        setCurrentDestName(waypoints[1].name || 'Waypoint 1');
+      } else {
+        setCurrentDestName(null);
+      }
+    }
+  }, [isRunning, status, waypoints, setCurrentDestName]);
+
   useEffect(() => {
     cityKeyRef.current = cityKey;
   }, [cityKey]);
@@ -247,6 +265,11 @@ const RealMapVisualizer = () => {
   const [scorePanelPos, setScorePanelPos] = useState(null);
   const [isDraggingScore, setIsDraggingScore] = useState(false);
   const scoreDragOffset = useRef({ x: 0, y: 0 });
+  
+  // Drag state for HUD Panel
+  const [hudPanelPos, setHudPanelPos] = useState(null);
+  const [isDraggingHud, setIsDraggingHud] = useState(false);
+  const hudDragOffset = useRef({ x: 0, y: 0 });
   
 
 
@@ -489,6 +512,7 @@ const RealMapVisualizer = () => {
     setCountdown(null);
     setMenuPanelPos(null);
     setScorePanelPos(null);
+    setHudPanelPos(null);
   }, [stopAlgorithm, resetAlgorithm, city]);
 
 
@@ -566,6 +590,37 @@ const RealMapVisualizer = () => {
     if (!isDraggingScore) return;
     e.stopPropagation();
     setIsDraggingScore(false);
+    e.currentTarget.closest('.draggable-panel')?.releasePointerCapture(e.pointerId);
+  };
+
+  // HUD Panel Drag Handlers
+  const handleHudPointerDown = (e) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    const panel = e.currentTarget.closest('.draggable-panel');
+    if (!panel) return;
+    const rect = panel.getBoundingClientRect();
+    hudDragOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    setIsDraggingHud(true);
+    panel.setPointerCapture(e.pointerId);
+  };
+
+  const handleHudPointerMove = (e) => {
+    if (!isDraggingHud) return;
+    e.stopPropagation();
+    setHudPanelPos({
+      left: `${e.clientX - hudDragOffset.current.x}px`,
+      top: `${e.clientY - hudDragOffset.current.y}px`,
+      bottom: 'auto',
+      right: 'auto',
+      transform: 'none'
+    });
+  };
+
+  const handleHudPointerUp = (e) => {
+    if (!isDraggingHud) return;
+    e.stopPropagation();
+    setIsDraggingHud(false);
     e.currentTarget.closest('.draggable-panel')?.releasePointerCapture(e.pointerId);
   };
   
@@ -661,7 +716,9 @@ const RealMapVisualizer = () => {
                   <span style={{ color: idx === 0 ? '#4ade80' : idx === waypoints.length - 1 ? '#f87171' : '#60a5fa' }}>
                     {idx === 0 ? 'Start (S)' : idx === waypoints.length - 1 ? 'End (E)' : `P${idx}`}
                   </span>
-                  <span className="text-gray-300">{`${pt.lat.toFixed(4)}, ${pt.lng.toFixed(4)}`}</span>
+                  <span className="text-gray-300 truncate max-w-[120px]" title={pt.name || `${pt.lat.toFixed(4)}, ${pt.lng.toFixed(4)}`}>
+                    {pt.name || `${pt.lat.toFixed(4)}, ${pt.lng.toFixed(4)}`}
+                  </span>
                 </div>
               ))}
               {waypoints.length === 0 && <span className="text-gray-500 italic">Click map to add points</span>}
@@ -921,6 +978,30 @@ const RealMapVisualizer = () => {
         {status === 'success' && <div className="mt-1 text-green-400 text-[9px] font-bold text-center tracking-wider">✓ COMPLETE</div>}
         {status === 'running' && <p className="mt-1.5 text-cyan-400 text-[10px] font-mono tracking-tighter">RUNNING{processingDots}</p>}
       </div>
+
+      {/* Destination HUD Overlay - Draggable & High Contrast for Longform */}
+      {currentDestName && (
+        <div 
+          className={`draggable-panel absolute z-[1001] pointer-events-auto transition-shadow ${isDraggingHud ? 'cursor-grabbing' : 'cursor-grab'}`}
+          style={hudPanelPos || { 
+            top: '50%', 
+            left: '50%', 
+            transform: 'translate(-50%, 140px)' 
+          }}
+          onPointerDown={handleHudPointerDown}
+          onPointerMove={handleHudPointerMove}
+          onPointerUp={handleHudPointerUp}
+        >
+          <div className="bg-gray-900/95 backdrop-blur-xl border-2 border-yellow-500/80 px-5 py-2 rounded-2xl flex items-center gap-4 shadow-[0_0_30px_rgba(234,179,8,0.3)] animate-fade-in-up">
+            <div className="flex flex-col">
+              <span className="text-[10px] font-black text-yellow-500 tracking-[0.2em] uppercase leading-none mb-1">Next Stop</span>
+              <span className="text-sm font-bold text-white tracking-wide drop-shadow-sm">{currentDestName}</span>
+            </div>
+            <div className="h-6 w-[2px] bg-yellow-500/30 rounded-full"></div>
+            <div className="text-xl">🎯</div>
+          </div>
+        </div>
+      )}
 
       {/* Map with dimming effect - Key ensures total re-render on city change */}
       <MapContainer 

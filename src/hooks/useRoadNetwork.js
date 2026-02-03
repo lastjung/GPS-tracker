@@ -121,14 +121,19 @@ const buildGraph = (osmData) => {
   const nodes = {};
   const edges = {};
   const ways = [];
+  const nodeNames = {};
   osmData.elements.forEach(el => {
     if (el.type === 'node') nodes[el.id] = { lat: el.lat, lon: el.lon };
   });
   osmData.elements.forEach(el => {
     if (el.type === 'way' && el.nodes) {
+      const roadName = el.tags?.name || el.tags?.highway || null;
       const wayCoords = el.nodes
         .filter(id => nodes[id])
-        .map(id => [nodes[id].lat, nodes[id].lon]);
+        .map(id => {
+          if (roadName) nodeNames[id] = roadName;
+          return [nodes[id].lat, nodes[id].lon];
+        });
       if (wayCoords.length > 1) ways.push(wayCoords);
       for (let i = 0; i < el.nodes.length - 1; i++) {
         const from = el.nodes[i], to = el.nodes[i+1];
@@ -141,11 +146,11 @@ const buildGraph = (osmData) => {
       }
     }
   });
-  return { nodes, edges, ways };
+  return { nodes, edges, ways, nodeNames };
 };
 
 export const useRoadNetwork = (bounds, cityKey) => {
-  const [graph, setGraph] = useState({ nodes: {}, edges: {}, ways: [] });
+  const [graph, setGraph] = useState({ nodes: {}, edges: {}, ways: [], nodeNames: {} });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 

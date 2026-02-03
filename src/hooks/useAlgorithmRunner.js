@@ -11,6 +11,7 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
   const [visitedEdges, setVisitedEdges] = useState([]);
   const [finalPath, setFinalPath] = useState([]);
   const [processingDots, setProcessingDots] = useState('');
+  const [currentDestName, setCurrentDestName] = useState(null);
   
   // UI Control states
   const [speed, setSpeed] = useState(4);
@@ -82,6 +83,7 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
     // Setup first segment
     let startId = nodeIds[0];
     let endId = nodeIds[1];
+    setCurrentDestName(points[1].name || 'Waypoint 1');
     let gen = algoFn(graph.nodes, graph.edges, startId, endId);
 
     // Dots animation
@@ -190,6 +192,7 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
            // Prepare next segment
            startId = nodeIds[currentSegment];
            endId = nodeIds[currentSegment + 1];
+           setCurrentDestName(points[currentSegment + 1].name || `Waypoint ${currentSegment + 1}`);
            gen = algoFn(graph.nodes, graph.edges, startId, endId);
            
            setFinalPath([...accumulatedPath]); 
@@ -208,6 +211,7 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
                distance: accumulatedDistance * 1000 
            });
            setStatus('success');
+           setCurrentDestName('ARRIVED');
            playSuccess();
         }
 
@@ -215,6 +219,7 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
         // Not found in current segment
         stop();
         setStatus('no_path');
+        setCurrentDestName(null);
       }
     };
     
@@ -223,6 +228,7 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
 
   return {
     isRunning, status, setStatus, stats, setStats, visitedEdges, setVisitedEdges, finalPath, setFinalPath, processingDots, setProcessingDots,
+    currentDestName, setCurrentDestName,
     speed, setSpeed, algorithm, setAlgorithm, density, setDensity, showVisualization, setShowVisualization, isTurboMode, setIsTurboMode,
     run, stop, reset
   };
