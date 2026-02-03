@@ -10,11 +10,13 @@ const CITIES = {
   tokyo: { center: [35.6715, 139.7700] },
   seoul: { center: [37.5385, 127.0200] },
   barcelona: { center: [41.3930, 2.1700] },
-  paris: { center: [48.8738, 2.2950] },
+  paris: { center: [48.8600, 2.3250] },
   london: { center: [51.5055, -0.0754] },
   sanfrancisco: { center: [37.8150, -122.4750] },
   moscow: { center: [55.7539, 37.6208] },
-  dubai: { center: [25.1170, 55.1300] }
+  dubai: { center: [25.1170, 55.1300] },
+  rome: { center: [41.898, 12.483] },
+  mexicocity: { center: [19.4326, -99.1450] }
 };
 
 const DELTA = 0.035; // Slightly larger coverage (approx 4km radius)

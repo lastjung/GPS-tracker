@@ -316,7 +316,6 @@ const RealMapVisualizer = () => {
         
         // Final sanity check: if the city changed or unmounted, discard data
         if (!isMounted || cityKeyRef.current !== requestCity) {
-           console.log(`Discarding stale data for ${requestCity}`);
            return;
         }
 
@@ -328,7 +327,6 @@ const RealMapVisualizer = () => {
       } catch (err) {
         if (err.name === 'AbortError') return;
         if (!isMounted) return;
-        console.error('Failed to load roads:', err);
         setStatus('error_loading');
       } finally {
         if (isMounted && cityKeyRef.current === requestCity) {
@@ -412,12 +410,9 @@ const RealMapVisualizer = () => {
         const selectedMime = mimeTypes.find(type => MediaRecorder.isTypeSupported(type)) || '';
         
         if (!selectedMime) {
-          console.error('No supported video mimeType found for MediaRecorder');
           alert('Screen recording is not supported in this browser.');
           return;
         }
-
-        console.log(`Starting recording with mimeType: ${selectedMime}`);
 
         const recorder = new MediaRecorder(stream, {
           mimeType: selectedMime,
@@ -468,10 +463,9 @@ const RealMapVisualizer = () => {
       });
       pendingStreamRef.current = stream;
       recordedChunksRef.current = [];
-      setIsPreparing(true);
       setCountdown(3);
     } catch (err) {
-      console.error('Failed to start recording:', err);
+      // Failed to start recording
     }
   }, []);
 
@@ -490,12 +484,12 @@ const RealMapVisualizer = () => {
   const resetAll = useCallback(() => {
     stopAlgorithm();
     resetAlgorithm();
-    setWaypoints([city.start, city.end]);
+    setWaypoints(city.waypoints || [city.start, city.end]);
     setShowMenu(true); // Restore menu on reset
     setCountdown(null);
     setMenuPanelPos(null);
     setScorePanelPos(null);
-  }, [stopAlgorithm, resetAlgorithm, city.start, city.end]);
+  }, [stopAlgorithm, resetAlgorithm, city]);
 
 
   // Menu Drag Handlers
@@ -608,29 +602,35 @@ const RealMapVisualizer = () => {
       {/* Control Panel - Hidden during running/recording/countdown/preparing, visible in idle and success */}
       {!recordMode && !isRunning && !countdown && !isRecording && !isPreparing && showMenu && (
       <div 
-        className={`draggable-panel absolute z-[1001] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 w-[calc(100%-2rem)] max-w-[320px] transition-all duration-300 ${isDraggingMenu ? 'cursor-grabbing' : ''}`}
+        className={`draggable-panel absolute z-[1001] bg-gray-900/90 p-3 rounded-lg text-white backdrop-blur-sm border border-gray-700 w-[calc(100%-2rem)] max-w-[280px] max-h-[85vh] flex flex-col transition-all duration-300 ${isDraggingMenu ? 'cursor-grabbing' : ''}`}
         style={menuPanelPos || (isShortsMode ? { 
-          bottom: 'max(1rem, calc(50vh - (100vh * 9/16 / 2) + 12px))', 
-          right: 'max(1rem, calc(50vw - (100vh * 9/16 / 2) + 12px))', 
+          bottom: 'max(0.5rem, calc(50vh - (100vh * 9/16 / 2) + 8px))', 
+          right: 'max(0.5rem, calc(50vw - (100vh * 9/16 / 2) + 8px))', 
           transform: 'none' 
         } : { 
-          bottom: '2rem', 
+          bottom: '1rem', 
           right: '1rem',
           transform: 'none'
         })}
         onPointerMove={handleMenuPointerMove}
         onPointerUp={handleMenuPointerUp}
       >
-        <div className="flex justify-between items-center mb-2">
-          <h2 
-            className="text-xl font-bold text-cyan-400 cursor-grab active:cursor-grabbing select-none"
+        <div className="flex justify-between items-center mb-1.5 border-b border-cyan-500/30 pb-1">
+          <div 
+            className="flex flex-col cursor-grab active:cursor-grabbing select-none"
             onPointerDown={handleMenuPointerDown}
           >
-            Path Finder
-          </h2>
+            <h1 className="text-[10px] font-black tracking-[0.2em] text-cyan-500/70 leading-none mb-1">ELITE PATH PASS</h1>
+            <div className="flex items-baseline gap-2">
+              <h2 className="text-sm font-bold text-white">{city.name}</h2>
+              <span className="text-[9px] font-mono text-yellow-400 bg-yellow-400/10 px-1 rounded border border-yellow-400/20">
+                {ALGORITHMS[algorithm].name.replace(' Search', '')}
+              </span>
+            </div>
+          </div>
           <button 
             onClick={() => setIsMenuCollapsed(!isMenuCollapsed)}
-            className="p-1 hover:bg-gray-700 rounded text-gray-400 transition-colors"
+            className="p-1 hover:bg-gray-700 rounded text-gray-400 transition-colors scale-75"
             title={isMenuCollapsed ? "Expand" : "Shrink"}
           >
             {isMenuCollapsed ? '🔼' : '🔽'}
@@ -639,15 +639,14 @@ const RealMapVisualizer = () => {
         
         {/* Settings Content - Always Visible when not collapsed */}
         {!isRunning && !countdown && !isMenuCollapsed && (
-          <div className="overflow-hidden">
+          <div className="overflow-y-auto pr-1 custom-scrollbar">
             {/* City Selector */}
-            <div className="flex flex-col gap-1 mb-3">
-              <label className="text-xs text-gray-400">City: <span className="text-cyan-300 font-bold">{city.name}</span></label>
+            <div className="flex flex-col gap-1 mb-2">
               <select
                 value={cityKey}
                 onChange={(e) => handleCityChange(e.target.value)}
                 disabled={isRunning}
-                className="bg-gray-700 text-white px-3 py-2 rounded w-full border border-gray-600 focus:border-cyan-500 outline-none"
+                className="bg-gray-700 text-white px-2 py-1.5 rounded w-full border border-gray-600 focus:border-cyan-500 outline-none text-[11px]"
               >
                 {Object.entries(CITIES).map(([key, c]) => (
                   <option key={key} value={key}>{c.name}</option>
@@ -656,11 +655,11 @@ const RealMapVisualizer = () => {
             </div>
             
             {/* Coordinates Display - Multi-waypoint aware */}
-            <div className="flex flex-col gap-1 mb-3 bg-gray-900/50 p-2 rounded border border-gray-700/50 font-mono text-[10px]">
+            <div className="flex flex-col gap-1 mb-3 bg-gray-900/50 p-2 rounded border border-gray-700/50 font-mono text-[10px] max-h-32 overflow-y-auto custom-scrollbar">
               {waypoints.map((pt, idx) => (
                 <div key={idx} className="flex justify-between">
                   <span style={{ color: idx === 0 ? '#4ade80' : idx === waypoints.length - 1 ? '#f87171' : '#60a5fa' }}>
-                    {idx === 0 ? 'Start (S)' : idx === waypoints.length - 1 ? 'End (E)' : `Point ${idx}`}
+                    {idx === 0 ? 'Start (S)' : idx === waypoints.length - 1 ? 'End (E)' : `P${idx}`}
                   </span>
                   <span className="text-gray-300">{`${pt.lat.toFixed(4)}, ${pt.lng.toFixed(4)}`}</span>
                 </div>
@@ -699,65 +698,65 @@ const RealMapVisualizer = () => {
             </div>
             
             {/* Sliders Group (Speed & Density) */}
-            <div className="flex flex-col gap-3 mb-3 bg-gray-800/30 p-2 rounded border border-gray-700/50">
+            <div className="flex flex-col gap-2 mb-2 bg-gray-800/30 p-2 rounded border border-gray-700/50">
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-400 flex justify-between">
+                <label className="text-[10px] text-gray-400 flex justify-between">
                   <span>Speed</span>
-                  <span className="text-cyan-400 font-mono text-[10px]">{speed}</span>
+                  <span className="text-cyan-400 font-mono">{speed}</span>
                 </label>
                 <input
                   type="range" min="1" max="50" value={speed}
                   onChange={(e) => setSpeed(Number(e.target.value))}
-                  className="w-full accent-cyan-500 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                  className="w-full accent-cyan-500 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-400 flex justify-between">
-                  <span>Path Density</span>
-                  <span className="text-cyan-400 font-mono text-[10px]">1/{density}</span>
+                <label className="text-[10px] text-gray-400 flex justify-between">
+                  <span>Density</span>
+                  <span className="text-cyan-400 font-mono">1/{density}</span>
                 </label>
                 <input
                   type="range" min="1" max="10" value={density}
                   onChange={(e) => setDensity(Number(e.target.value))}
                   disabled={isRunning}
-                  className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                  className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
                 />
               </div>
             </div>
 
             {/* Visualization & View Controls */}
-            <div className="flex flex-col gap-2 mb-3 bg-gray-800/50 p-2 rounded border border-gray-700">
+            <div className="flex flex-col gap-1 mb-2 bg-gray-800/50 p-2 rounded border border-gray-700">
               <div className="flex items-center gap-2">
                 <input 
                   type="checkbox" id="vizToggle" checked={showVisualization} 
                   onChange={(e) => setShowVisualization(e.target.checked)}
-                  disabled={isRunning} className="w-4 h-4 rounded accent-cyan-500"
+                  disabled={isRunning} className="w-3 h-3 rounded accent-cyan-500"
                 />
-                <label htmlFor="vizToggle" className="text-xs text-gray-300 cursor-pointer">Show Steps</label>
+                <label htmlFor="vizToggle" className="text-[10px] text-gray-300 cursor-pointer">Show Steps</label>
               </div>
               <div className="flex items-center gap-2">
                 <input 
                   type="checkbox" id="lockToggle" checked={isMapLocked} 
                   onChange={(e) => setIsMapLocked(e.target.checked)}
-                  className="w-4 h-4 rounded accent-orange-500"
+                  className="w-3 h-3 rounded accent-orange-500"
                 />
-                <label htmlFor="lockToggle" className="text-xs text-orange-300 font-bold cursor-pointer">Lock Map View</label>
+                <label htmlFor="lockToggle" className="text-[10px] text-orange-300 font-bold cursor-pointer">Lock Map</label>
               </div>
               <div className="flex items-center gap-2">
                 <input 
                   type="checkbox" id="shortsToggle" checked={isShortsMode} 
                   onChange={(e) => setIsShortsMode(e.target.checked)}
-                  className="w-4 h-4 rounded accent-purple-500"
+                  className="w-3 h-3 rounded accent-purple-500"
                 />
-                <label htmlFor="shortsToggle" className="text-xs text-purple-300 font-bold cursor-pointer">9:16 Shorts Mode</label>
+                <label htmlFor="shortsToggle" className="text-[10px] text-purple-300 font-bold cursor-pointer">9:16 Shorts</label>
               </div>
               <div className="flex items-center gap-2">
                 <input 
                   type="checkbox" id="turboToggle" checked={isTurboMode} 
                   onChange={(e) => setIsTurboMode(e.target.checked)}
-                  className="w-4 h-4 rounded accent-yellow-500"
+                  className="w-3 h-3 rounded accent-yellow-500"
                 />
-                <label htmlFor="turboToggle" className="text-xs text-yellow-300 font-bold cursor-pointer">Tube Mode (Acceleration)</label>
+                <label htmlFor="turboToggle" className="text-[10px] text-yellow-300 font-bold cursor-pointer">Tube Mode</label>
               </div>
             </div>
           </div>
@@ -775,19 +774,15 @@ const RealMapVisualizer = () => {
         
         {/* Grouped Action Area - Hidden when collapsed */}
         {!isRunning && !countdown && !isMenuCollapsed && (
-          <div className="flex flex-col gap-2 p-3 bg-gray-800/50 rounded-lg border border-gray-700 shadow-inner">
-            <p className={`text-[10px] text-center italic ${status === 'success' ? 'text-green-400 font-bold' : 'text-gray-400'}`}>
-              {waypoints.length < 2 ? 'Add at least 2 points' : status === 'success' ? '✓ Complete' : `Ready: ${waypoints.length} points`}
-            </p>
-            
-            <div className="flex gap-2 items-stretch">
+          <div className="flex flex-col gap-2 p-2 bg-gray-800/50 rounded-lg border border-gray-700 shadow-inner">
+            <div className="flex gap-1.5 items-stretch flex-wrap">
               <button
                 onClick={handleStart}
                 disabled={waypoints.length < 2 || isLoading || countdown !== null}
-                className={`h-8 rounded-lg font-bold flex-[2] text-xs text-white transition-all duration-300 transform active:scale-95 shadow-lg ${
+                className={`h-7 rounded px-4 font-bold flex-1 text-[10px] text-white transition-all duration-300 transform active:scale-95 shadow-lg ${
                   waypoints.length < 2 || isLoading || graph.ways.length === 0
                     ? 'bg-gray-800 text-gray-600 cursor-not-allowed border border-gray-700' 
-                    : 'bg-gradient-to-br from-emerald-400 to-teal-600 hover:from-emerald-300 hover:to-teal-500 shadow-emerald-900/40 hover:shadow-emerald-500/50'
+                    : 'bg-gradient-to-br from-emerald-400 to-teal-600 hover:from-emerald-300 hover:to-teal-500'
                 }`}
               >
                 {waypoints.length < 2 ? 'Select Points' : (isLoading || graph.ways.length === 0 ? 'Wait' : 'Start')}
@@ -795,13 +790,13 @@ const RealMapVisualizer = () => {
               
               <button
                 onClick={() => setWaypoints([])}
-                className="px-2 h-8 bg-red-800/50 hover:bg-red-700 text-gray-300 rounded-lg shadow-md font-bold text-xs transition-all border border-red-900 active:scale-95"
-                title="Clear all points"
+                className="px-2 h-7 bg-red-800/30 hover:bg-red-700/50 text-gray-400 rounded shadow-md font-bold text-[10px] transition-all border border-red-900/30 active:scale-95"
+                title="Clear all"
               >Clear</button>
               
               <button
                 onClick={resetAll}
-                className="px-4 h-8 bg-gray-700 hover:bg-gray-600 text-gray-200 rounded-lg shadow-md font-bold text-xs transition-all border border-gray-600 active:scale-95"
+                className="px-2 h-7 bg-gray-700/50 hover:bg-gray-600 text-gray-300 rounded shadow-md font-bold text-[10px] transition-all border border-gray-600/50 active:scale-95"
               >Reset</button>
 
               {isShortsMode && waypoints.length >= 2 && (
@@ -810,8 +805,8 @@ const RealMapVisualizer = () => {
                     setIsShortsMode(false);
                     setTimeout(() => setIsShortsMode(true), 10);
                   }}
-                  title="Fit path into 9:16 area"
-                  className="px-4 h-8 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg shadow-lg transition-all active:scale-95"
+                  title="Fit 9:16"
+                  className="px-2.5 h-7 bg-indigo-600/80 hover:bg-indigo-500 text-white rounded shadow-lg transition-all active:scale-95 text-[10px]"
                 >🎯</button>
               )}
             </div>
@@ -819,11 +814,11 @@ const RealMapVisualizer = () => {
             <button
               onClick={isRecording ? stopRecording : startRecording}
               disabled={(isRunning || isLoading || countdown !== null) && !isRecording}
-              className={`w-full h-8 text-[11px] font-black rounded-lg transition-all shadow-xl active:scale-[0.98] ${
+              className={`w-full h-7 text-[10px] font-black rounded transition-all shadow-xl active:scale-[0.98] ${
                 countdown !== null ? 'bg-amber-500' : isRecording ? 'bg-red-500 animate-pulse' : 'bg-gradient-to-r from-fuchsia-600 to-purple-700 hover:from-fuchsia-500 hover:to-purple-600 shadow-purple-900/30'
               } text-white disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed`}
             >
-              {countdown !== null ? `⏳ ${countdown}` : isRecording ? 'STOP REC' : 'REC & START'}
+              {countdown !== null ? `⏳ ${countdown}` : isRecording ? 'STOP' : 'REC & START'}
             </button>
           </div>
         )}
@@ -888,30 +883,43 @@ const RealMapVisualizer = () => {
       {/* Stats Overlay - Always visible per user request */}
       {/* Stats Overlay - Always visible per user request */}
       <div 
-        className={`draggable-panel absolute top-4 z-[1000] bg-gray-900/90 p-4 rounded-lg text-white backdrop-blur-sm border border-gray-700 w-[calc(100%-2rem)] max-w-[280px] transition-all duration-300 ${isDraggingScore ? 'cursor-grabbing' : ''}`}
+        className={`draggable-panel absolute top-4 z-[1000] bg-gray-900/90 p-2.5 rounded-lg text-white backdrop-blur-sm border border-gray-700 w-[calc(100%-2rem)] max-w-[220px] transition-all duration-300 ${isDraggingScore ? 'cursor-grabbing' : ''}`}
         style={scorePanelPos || (isShortsMode ? { 
-          left: 'max(1rem, calc(50vw - (100vh * 9/16 / 2) + 12px))', 
+          left: 'max(0.5rem, calc(50vw - (100vh * 9/16 / 2) + 8px))', 
           transform: 'none' 
         } : { left: '1rem' })}
         onPointerMove={handleScorePointerMove}
         onPointerUp={handleScorePointerUp}
       >
-        <h2 
-          className="text-xl font-bold mb-2 text-cyan-400 cursor-grab active:cursor-grabbing select-none"
+        <div 
+          className="flex flex-col mb-2 cursor-grab active:cursor-grabbing select-none"
           onPointerDown={handleScorePointerDown}
         >
-          {city.name.split(' (')[0]}
-        </h2>
-        <div className="p-2 bg-gray-800 rounded border border-cyan-500 mb-3">
-          <div className="text-lg font-bold text-yellow-400">{ALGORITHMS[algorithm].name}</div>
+          <h1 className="text-[9px] font-black tracking-[0.2em] text-cyan-500/60 leading-none mb-1">ELITE PATH PASS</h1>
+          <div className="flex items-baseline gap-2">
+            <h2 className="text-sm font-bold text-white">{city.name.split(' (')[0]}</h2>
+            <span className="text-[9px] font-mono text-yellow-400 bg-yellow-400/10 px-1 rounded border border-yellow-400/20">
+              {ALGORITHMS[algorithm].name.replace(' Search', '')}
+            </span>
+          </div>
         </div>
-        <div className="p-2 bg-gray-800 rounded text-sm border border-gray-700 space-y-1">
-          <div className="flex justify-between"><span>Roads explored:</span><span className="text-cyan-400 font-bold">{stats.edges}</span></div>
-          <div className="flex justify-between"><span>Time:</span><span className="text-green-400">{((stats.time || 0) / 1000).toFixed(3)}s</span></div>
-          <div className="flex justify-between"><span>Distance:</span><span className="text-orange-400 font-bold">{(stats.distance || 0).toFixed(0)}m</span></div>
+        
+        <div className="p-2 bg-gray-800/80 rounded text-[10px] border border-gray-700/50 space-y-1 font-mono">
+          <div className="flex justify-between">
+            <span className="text-gray-400 text-[9px]">EXPLORED</span>
+            <span className="text-cyan-400 font-bold">{stats.edges}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-400 text-[9px]">TIME</span>
+            <span className="text-green-400">{((stats.time || 0) / 1000).toFixed(2)}s</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-400 text-[9px]">DIST</span>
+            <span className="text-orange-400 font-bold">{(stats.distance || 0).toFixed(0)}m</span>
+          </div>
         </div>
-        {status === 'success' && <div className="mt-2 text-green-400 text-sm font-medium text-center">✓ Path found</div>}
-        {status === 'running' && <p className="mt-3 text-cyan-400 text-lg font-mono">Calculating{processingDots}</p>}
+        {status === 'success' && <div className="mt-1 text-green-400 text-[9px] font-bold text-center tracking-wider">✓ COMPLETE</div>}
+        {status === 'running' && <p className="mt-1.5 text-cyan-400 text-[10px] font-mono tracking-tighter">RUNNING{processingDots}</p>}
       </div>
 
       {/* Map with dimming effect - Key ensures total re-render on city change */}

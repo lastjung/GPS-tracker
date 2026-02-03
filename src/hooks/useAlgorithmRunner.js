@@ -127,7 +127,6 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
         setStatus('success');
         playSuccess();
       } catch (e) {
-        console.error(e);
         setStatus('error');
       } finally {
         stop();

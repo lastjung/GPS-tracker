@@ -30,10 +30,23 @@ export const CITIES = {
     end: { lat: 41.4250, lng: 2.1680 }
   },
   paris: {
-    name: 'Paris (Arc de Triomphe)',
-    center: [48.8738, 2.2950],
-    start: { lat: 48.8870, lng: 2.3080 }, // 17th Arrondissement (North of Arc)
-    end: { lat: 48.8580, lng: 2.2900 }    // Near Eiffel Tower (South of Seine)
+    name: 'Paris (Zigzag & Star)',
+    center: [48.8600, 2.3250],
+    waypoints: [
+      { lat: 48.8837, lng: 2.3275 }, // 1. Place de Clichy (Radial Entry Start)
+      { lat: 48.8738, lng: 2.2950 }, // 2. Arc de Triomphe (The Star Hub)
+      { lat: 48.8616, lng: 2.2893 }, // 3. Trocadéro
+      { lat: 48.8584, lng: 2.2945 }, // 4. Eiffel Tower (Crossing 1)
+      { lat: 48.8566, lng: 2.3126 }, // 5. Les Invalides
+      { lat: 48.8660, lng: 2.3145 }, // 6. Grand Palais (Crossing 2 - Pont Alexandre III)
+      { lat: 48.8655, lng: 2.3212 }, // 7. Place de la Concorde
+      { lat: 48.8598, lng: 2.3265 }, // 8. Musée d'Orsay (Crossing 3)
+      { lat: 48.8606, lng: 2.3376 }, // 9. Louvre Museum (Crossing 4)
+      { lat: 48.8530, lng: 2.3499 }, // 10. Notre-Dame Cathedral
+      { lat: 48.8462, lng: 2.3464 }  // 11. Panthéon (End)
+    ],
+    start: { lat: 48.8837, lng: 2.3275 },
+    end: { lat: 48.8462, lng: 2.3464 }
   },
   london: {
     name: 'London (Tower Bridge)',
@@ -71,5 +84,43 @@ export const CITIES = {
     center: [25.1170, 55.1300],
     start: { lat: 25.1030, lng: 55.1550 }, // Mainland Gateway
     end: { lat: 25.1305, lng: 55.1170 }    // Atlantis The Palm
+  },
+  rome: {
+    name: 'Rome (Ancient Labyrinth)',
+    center: [41.898, 12.483], 
+    waypoints: [
+      { lat: 41.8902, lng: 12.4922 }, // 1. Colosseum (Start)
+      { lat: 41.8945, lng: 12.4853 }, // 2. Imperial Fora
+      { lat: 41.8958, lng: 12.4822 }, // 3. Altare della Patria
+      { lat: 41.8992, lng: 12.4731 }, // 4. Piazza Navona
+      { lat: 41.8986, lng: 12.4768 }, // 5. Pantheon
+      { lat: 41.9009, lng: 12.4833 }, // 6. Trevi Fountain
+      { lat: 41.9059, lng: 12.4827 }, // 7. Spanish Steps
+      { lat: 41.9107, lng: 12.4764 }, // 8. Piazza del Popolo
+      { lat: 41.9031, lng: 12.4663 }, // 9. Castel Sant'Angelo
+      { lat: 41.9022, lng: 12.4599 }, // 10. Via della Conciliazione
+      { lat: 41.9022, lng: 12.4539 }  // 11. St. Peter's Square (End)
+    ],
+    start: { lat: 41.8902, lng: 12.4922 },
+    end: { lat: 41.9022, lng: 12.4539 }
+  },
+  mexicocity: {
+    name: 'Mexico City (Grid Labyrinth)',
+    center: [19.4326, -99.1450], 
+    waypoints: [
+      { lat: 19.4204, lng: -99.1819 }, // 1. Chapultepec Castle (Start)
+      { lat: 19.4162, lng: -99.1603 }, // 2. Roma Norte (South of Reforma)
+      { lat: 19.4239, lng: -99.1633 }, // 3. Insurgentes Circle (The Labyrinth Hub)
+      { lat: 19.4300, lng: -99.1550 }, // 4. Juárez Neighborhood (Zigzag)
+      { lat: 19.4362, lng: -99.1546 }, // 5. Monument to the Revolution
+      { lat: 19.4420, lng: -99.1480 }, // 6. Santa Maria la Ribera (North of Reforma)
+      { lat: 19.4360, lng: -99.1440 }, // 7. Alameda Central
+      { lat: 19.4290, lng: -99.1435 }, // 8. Near Chinatown (South of Alameda)
+      { lat: 19.4339, lng: -99.1404 }, // 9. Torre Latinoamericana
+      { lat: 19.4380, lng: -99.1350 }, // 10. Historic Alleys (Deep Grid)
+      { lat: 19.4326, lng: -99.1332 }  // 11. Zocalo (End)
+    ],
+    start: { lat: 19.4204, lng: -99.1819 },
+    end: { lat: 19.4326, lng: -99.1332 }
   }
 };

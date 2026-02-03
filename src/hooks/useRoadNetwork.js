@@ -99,9 +99,16 @@ const fetchRoadNetwork = async (bounds, signal) => {
   else if (Math.abs(centerLat - 25.11) < 0.2 && Math.abs(centerLon - 55.13) < 0.2) {
     localFile = 'dubai.json';
   }
+  // Mexico City approx: 19.43, -99.13
+  else if (Math.abs(centerLat - 19.43) < 0.2 && Math.abs(centerLon - (-99.13)) < 0.2) {
+    localFile = 'mexicocity.json';
+  }
+  // Rome approx: 41.90, 12.49
+  else if (Math.abs(centerLat - 41.90) < 0.2 && Math.abs(centerLon - 12.49) < 0.2) {
+    localFile = 'rome.json';
+  }
 
   if (localFile) {
-    console.warn(`Using local fallback data: ${localFile}`);
     const response = await fetch(`${baseUrl}data/${localFile}`);
     if (!response.ok) throw new Error(`Failed to load local data: ${localFile}`);
     return response.json();
@@ -154,7 +161,6 @@ export const useRoadNetwork = (bounds, cityKey) => {
     } catch (err) {
       if (err.name !== 'AbortError') {
         setError('error_loading');
-        console.error(err);
       }
     } finally {
       setIsLoading(false);
