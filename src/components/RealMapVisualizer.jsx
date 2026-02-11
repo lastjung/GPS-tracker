@@ -293,7 +293,8 @@ const RealMapVisualizer = () => {
       const minLng = Math.min(...lngs);
       const maxLng = Math.max(...lngs);
       
-      const padding = 0.02;
+      // Milan needs extra wide padding for the stadium to be included
+      const padding = key === 'milan' ? 0.07 : 0.04; 
       setBounds({
         south: minLat - padding,
         north: maxLat + padding,
@@ -303,7 +304,7 @@ const RealMapVisualizer = () => {
     } else {
       setWaypoints([newCity.start, newCity.end]);
       // Slight zoom out for Moscow
-      const padding = key === 'moscow' ? 0.03 : 0.01;
+      const padding = 0.03; // Increased padding for better connectivity
       setBounds(boundsFromPoints(newCity.start, newCity.end, padding));
     }
     
@@ -657,7 +658,7 @@ const RealMapVisualizer = () => {
       {/* Control Panel - Hidden during running/recording/countdown/preparing, visible in idle and success */}
       {!recordMode && !isRunning && !countdown && !isRecording && !isPreparing && showMenu && (
       <div 
-        className={`draggable-panel absolute z-[1001] bg-gray-900/90 p-3 rounded-lg text-white backdrop-blur-sm border border-gray-700 w-[calc(100%-2rem)] max-w-[280px] max-h-[85vh] flex flex-col transition-all duration-300 ${isDraggingMenu ? 'cursor-grabbing' : ''}`}
+        className={`draggable-panel absolute z-[1001] bg-gray-900/95 p-5 rounded-xl text-white backdrop-blur-md border border-gray-700 w-[calc(100%-2rem)] max-w-[340px] max-h-[90vh] flex flex-col transition-all duration-300 shadow-2xl ${isDraggingMenu ? 'cursor-grabbing' : ''}`}
         style={menuPanelPos || (isShortsMode ? { 
           bottom: 'max(0.5rem, calc(50vh - (100vh * 9/16 / 2) + 8px))', 
           right: 'max(0.5rem, calc(50vw - (100vh * 9/16 / 2) + 8px))', 
@@ -675,10 +676,10 @@ const RealMapVisualizer = () => {
             className="flex flex-col cursor-grab active:cursor-grabbing select-none"
             onPointerDown={handleMenuPointerDown}
           >
-            <h1 className="text-[10px] font-black tracking-[0.2em] text-cyan-500/70 leading-none mb-1">ELITE PATH PASS</h1>
+            <h1 className="text-[11px] font-black tracking-[0.2em] text-cyan-400 leading-none mb-1.5">ELITE PATH PASS</h1>
             <div className="flex items-baseline gap-2">
-              <h2 className="text-sm font-bold text-white">{city.name}</h2>
-              <span className="text-[9px] font-mono text-yellow-400 bg-yellow-400/10 px-1 rounded border border-yellow-400/20">
+              <h2 className="text-lg font-black text-white">{city.name}</h2>
+              <span className="text-[11px] font-mono text-yellow-400 bg-yellow-400/20 px-2 py-0.5 rounded border border-yellow-400/30">
                 {ALGORITHMS[algorithm].name.replace(' Search', '')}
               </span>
             </div>
@@ -701,7 +702,7 @@ const RealMapVisualizer = () => {
                 value={cityKey}
                 onChange={(e) => handleCityChange(e.target.value)}
                 disabled={isRunning}
-                className="bg-gray-700 text-white px-2 py-1.5 rounded w-full border border-gray-600 focus:border-cyan-500 outline-none text-[11px]"
+                className="bg-gray-800 text-white px-3 py-2.5 rounded-lg w-full border border-gray-700 focus:border-cyan-500 outline-none text-sm font-medium shadow-inner"
               >
                 {Object.entries(CITIES).map(([key, c]) => (
                   <option key={key} value={key}>{c.name}</option>
@@ -710,13 +711,13 @@ const RealMapVisualizer = () => {
             </div>
             
             {/* Coordinates Display - Multi-waypoint aware */}
-            <div className="flex flex-col gap-1 mb-3 bg-gray-900/50 p-2 rounded border border-gray-700/50 font-mono text-[10px] max-h-32 overflow-y-auto custom-scrollbar">
+            <div className="flex flex-col gap-1.5 mb-4 bg-gray-950/60 p-3 rounded-lg border border-gray-800 font-mono text-[11px] max-h-40 overflow-y-auto custom-scrollbar shadow-inner">
               {waypoints.map((pt, idx) => (
-                <div key={idx} className="flex justify-between">
-                  <span style={{ color: idx === 0 ? '#4ade80' : idx === waypoints.length - 1 ? '#f87171' : '#60a5fa' }}>
-                    {idx === 0 ? 'Start (S)' : idx === waypoints.length - 1 ? 'End (E)' : `P${idx}`}
+                <div key={idx} className="flex justify-between items-center">
+                  <span className="font-bold" style={{ color: idx === 0 ? '#4ade80' : idx === waypoints.length - 1 ? '#f87171' : '#60a5fa' }}>
+                    {idx === 0 ? 'START' : idx === waypoints.length - 1 ? 'END' : `WAY ${idx}`}
                   </span>
-                  <span className="text-gray-300 truncate max-w-[120px]" title={pt.name || `${pt.lat.toFixed(4)}, ${pt.lng.toFixed(4)}`}>
+                  <span className="text-gray-300 truncate max-w-[160px] ml-2" title={pt.name || `${pt.lat.toFixed(4)}, ${pt.lng.toFixed(4)}`}>
                     {pt.name || `${pt.lat.toFixed(4)}, ${pt.lng.toFixed(4)}`}
                   </span>
                 </div>
@@ -725,28 +726,28 @@ const RealMapVisualizer = () => {
             </div>
 
             {/* Mode Toggle */}
-            <div className="flex flex-col gap-1 mb-3">
-              <label className="text-xs text-gray-400">Mode</label>
-              <div className="flex bg-gray-800 rounded p-1 border border-gray-700">
+            <div className="flex flex-col gap-1.5 mb-4">
+              <label className="text-[11px] font-bold text-gray-400 tracking-wider">VIEW MODE</label>
+              <div className="flex bg-gray-900 rounded-lg p-1 border border-gray-800">
                 <button 
-                  className={`flex-1 text-[10px] py-1 rounded ${displayMode === 'Visualize' ? 'bg-cyan-600' : 'hover:bg-gray-700'}`}
+                  className={`flex-1 text-[11px] py-1.5 rounded-md font-bold transition-all ${displayMode === 'Visualize' ? 'bg-cyan-600 shadow-lg' : 'hover:bg-gray-800 text-gray-400'}`}
                   onClick={() => setDisplayMode('Visualize')}
                 >Visualize</button>
                 <button 
-                  className={`flex-1 text-[10px] py-1 rounded ${displayMode === 'Route' ? 'bg-cyan-600' : 'hover:bg-gray-700'}`}
+                  className={`flex-1 text-[11px] py-1.5 rounded-md font-bold transition-all ${displayMode === 'Route' ? 'bg-cyan-600 shadow-lg' : 'hover:bg-gray-800 text-gray-400'}`}
                   onClick={() => setDisplayMode('Route')}
                 >Route</button>
               </div>
             </div>
 
             {/* Algorithm Selector */}
-            <div className="flex flex-col gap-1 mb-3">
-              <label className="text-xs text-gray-400">Algorithm</label>
+            <div className="flex flex-col gap-1.5 mb-4">
+              <label className="text-[11px] font-bold text-gray-400 tracking-wider">ALGORITHM</label>
               <select
                 value={algorithm}
                 onChange={(e) => setAlgorithm(e.target.value)}
                 disabled={isRunning}
-                className="bg-gray-700 text-white px-3 py-2 rounded w-full"
+                className="bg-gray-800 text-white px-3 py-2.5 rounded-lg w-full border border-gray-700 outline-none text-sm font-medium"
               >
                 {Object.entries(ALGORITHMS).map(([key, { name }]) => (
                   <option key={key} value={key}>{name}</option>
@@ -755,65 +756,65 @@ const RealMapVisualizer = () => {
             </div>
             
             {/* Sliders Group (Speed & Density) */}
-            <div className="flex flex-col gap-2 mb-2 bg-gray-800/30 p-2 rounded border border-gray-700/50">
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] text-gray-400 flex justify-between">
-                  <span>Speed</span>
-                  <span className="text-cyan-400 font-mono">{speed}</span>
+            <div className="flex flex-col gap-3 mb-4 bg-gray-900/40 p-3 rounded-lg border border-gray-800">
+              <div className="flex flex-col gap-2">
+                <label className="text-[11px] font-bold text-gray-400 flex justify-between tracking-wider">
+                  <span>STEP SPEED</span>
+                  <span className="text-cyan-400 font-mono bg-cyan-400/10 px-1.5 rounded">{speed}</span>
                 </label>
                 <input
                   type="range" min="1" max="50" value={speed}
                   onChange={(e) => setSpeed(Number(e.target.value))}
-                  className="w-full accent-cyan-500 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                  className="w-full accent-cyan-500 h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer"
                 />
               </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] text-gray-400 flex justify-between">
-                  <span>Density</span>
-                  <span className="text-cyan-400 font-mono">1/{density}</span>
+              <div className="flex flex-col gap-2">
+                <label className="text-[11px] font-bold text-gray-400 flex justify-between tracking-wider">
+                  <span>DENSITY</span>
+                  <span className="text-cyan-400 font-mono bg-cyan-400/10 px-1.5 rounded">1/{density}</span>
                 </label>
                 <input
                   type="range" min="1" max="10" value={density}
                   onChange={(e) => setDensity(Number(e.target.value))}
                   disabled={isRunning}
-                  className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                  className="w-full h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-cyan-500"
                 />
               </div>
             </div>
 
             {/* Visualization & View Controls */}
-            <div className="flex flex-col gap-1 mb-2 bg-gray-800/50 p-2 rounded border border-gray-700">
+            <div className="grid grid-cols-2 gap-2 mb-4 bg-gray-900/60 p-3 rounded-lg border border-gray-800">
               <div className="flex items-center gap-2">
                 <input 
                   type="checkbox" id="vizToggle" checked={showVisualization} 
                   onChange={(e) => setShowVisualization(e.target.checked)}
-                  disabled={isRunning} className="w-3 h-3 rounded accent-cyan-500"
+                  disabled={isRunning} className="w-4 h-4 rounded accent-cyan-500"
                 />
-                <label htmlFor="vizToggle" className="text-[10px] text-gray-300 cursor-pointer">Show Steps</label>
+                <label htmlFor="vizToggle" className="text-[11px] font-medium text-gray-300 cursor-pointer">Show Steps</label>
               </div>
               <div className="flex items-center gap-2">
                 <input 
                   type="checkbox" id="lockToggle" checked={isMapLocked} 
                   onChange={(e) => setIsMapLocked(e.target.checked)}
-                  className="w-3 h-3 rounded accent-orange-500"
+                  className="w-4 h-4 rounded accent-orange-500"
                 />
-                <label htmlFor="lockToggle" className="text-[10px] text-orange-300 font-bold cursor-pointer">Lock Map</label>
+                <label htmlFor="lockToggle" className="text-[11px] text-orange-400 font-bold cursor-pointer">Lock Map</label>
               </div>
               <div className="flex items-center gap-2">
                 <input 
                   type="checkbox" id="shortsToggle" checked={isShortsMode} 
                   onChange={(e) => setIsShortsMode(e.target.checked)}
-                  className="w-3 h-3 rounded accent-purple-500"
+                  className="w-4 h-4 rounded accent-purple-500"
                 />
-                <label htmlFor="shortsToggle" className="text-[10px] text-purple-300 font-bold cursor-pointer">9:16 Shorts</label>
+                <label htmlFor="shortsToggle" className="text-[11px] text-purple-400 font-bold cursor-pointer">9:16 Shorts</label>
               </div>
               <div className="flex items-center gap-2">
                 <input 
                   type="checkbox" id="turboToggle" checked={isTurboMode} 
                   onChange={(e) => setIsTurboMode(e.target.checked)}
-                  className="w-3 h-3 rounded accent-yellow-500"
+                  className="w-4 h-4 rounded accent-yellow-500"
                 />
-                <label htmlFor="turboToggle" className="text-[10px] text-yellow-300 font-bold cursor-pointer">Tube Mode</label>
+                <label htmlFor="turboToggle" className="text-[11px] text-yellow-500 font-black cursor-pointer italic">TURBO</label>
               </div>
             </div>
           </div>
@@ -821,33 +822,33 @@ const RealMapVisualizer = () => {
 
         {/* Current Algorithm Name & Description - Always visible status when not collapsed */}
         {!isMenuCollapsed && (
-          <div className="mb-3 p-2 bg-gray-800 rounded border border-cyan-500">
-            <div className="text-md font-bold text-yellow-400 flex justify-between items-center">
+          <div className="mb-4 p-3 bg-gray-950/80 rounded-xl border border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.2)]">
+            <div className="text-lg font-black text-yellow-400 flex justify-between items-center tracking-tight">
               {ALGORITHMS[algorithm].name}
             </div>
-            {!isRunning && <div className="text-[10px] text-gray-400 mt-1">{ALGORITHMS[algorithm].description}</div>}
+            {!isRunning && <div className="text-[11px] text-gray-400 mt-1.5 leading-relaxed font-medium">{ALGORITHMS[algorithm].description}</div>}
           </div>
         )}
         
         {/* Grouped Action Area - Hidden when collapsed */}
         {!isRunning && !countdown && !isMenuCollapsed && (
-          <div className="flex flex-col gap-2 p-2 bg-gray-800/50 rounded-lg border border-gray-700 shadow-inner">
-            <div className="flex gap-1.5 items-stretch flex-wrap">
+          <div className="flex flex-col gap-3 p-3 bg-gray-950/40 rounded-xl border border-gray-800 shadow-inner">
+            <div className="flex gap-2 items-stretch flex-wrap">
               <button
                 onClick={handleStart}
                 disabled={waypoints.length < 2 || isLoading || countdown !== null}
-                className={`h-7 rounded px-4 font-bold flex-1 text-[10px] text-white transition-all duration-300 transform active:scale-95 shadow-lg ${
+                className={`h-10 rounded-lg px-6 font-black flex-1 text-sm tracking-widest text-white transition-all duration-300 transform active:scale-95 shadow-xl ${
                   waypoints.length < 2 || isLoading || graph.ways.length === 0
                     ? 'bg-gray-800 text-gray-600 cursor-not-allowed border border-gray-700' 
-                    : 'bg-gradient-to-br from-emerald-400 to-teal-600 hover:from-emerald-300 hover:to-teal-500'
+                    : 'bg-gradient-to-br from-emerald-400 to-teal-600 hover:from-emerald-300 hover:to-teal-500 ring-2 ring-emerald-500/20'
                 }`}
               >
-                {waypoints.length < 2 ? 'Select Points' : (isLoading || graph.ways.length === 0 ? 'Wait' : 'Start')}
+                {waypoints.length < 2 ? 'SELECT POINTS' : (isLoading || graph.ways.length === 0 ? 'PLEASE WAIT' : 'START JOURNEY')}
               </button>
               
               <button
                 onClick={() => setWaypoints([])}
-                className="px-2 h-7 bg-red-800/30 hover:bg-red-700/50 text-gray-400 rounded shadow-md font-bold text-[10px] transition-all border border-red-900/30 active:scale-95"
+                className="px-3 h-10 bg-red-950/40 hover:bg-red-900/60 text-red-400/80 rounded-lg shadow-md font-bold text-xs transition-all border border-red-900/30 active:scale-95"
                 title="Clear all"
               >Clear</button>
               
@@ -940,43 +941,43 @@ const RealMapVisualizer = () => {
       {/* Stats Overlay - Always visible per user request */}
       {/* Stats Overlay - Always visible per user request */}
       <div 
-        className={`draggable-panel absolute top-4 z-[1000] bg-gray-900/90 p-2.5 rounded-lg text-white backdrop-blur-sm border border-gray-700 w-[calc(100%-2rem)] max-w-[220px] transition-all duration-300 ${isDraggingScore ? 'cursor-grabbing' : ''}`}
+        className={`draggable-panel absolute top-4 z-[1000] bg-gray-900/95 p-5 rounded-2xl text-white backdrop-blur-md border border-gray-700 w-[calc(100%-2rem)] max-w-[280px] transition-all duration-300 shadow-2xl ${isDraggingScore ? 'cursor-grabbing' : ''}`}
         style={scorePanelPos || (isShortsMode ? { 
-          left: 'max(0.5rem, calc(50vw - (100vh * 9/16 / 2) + 8px))', 
+          left: 'max(0.5rem, calc(50vw - (100vh * 9/16 / 2) + 12px))', 
           transform: 'none' 
-        } : { left: '1rem' })}
+        } : { left: '1.5rem' })}
         onPointerMove={handleScorePointerMove}
         onPointerUp={handleScorePointerUp}
       >
         <div 
-          className="flex flex-col mb-2 cursor-grab active:cursor-grabbing select-none"
+          className="flex flex-col mb-4 cursor-grab active:cursor-grabbing select-none"
           onPointerDown={handleScorePointerDown}
         >
-          <h1 className="text-[9px] font-black tracking-[0.2em] text-cyan-500/60 leading-none mb-1">ELITE PATH PASS</h1>
+          <h1 className="text-[11px] font-black tracking-[0.2em] text-cyan-400 leading-none mb-1.5">ELITE PATH PASS</h1>
           <div className="flex items-baseline gap-2">
-            <h2 className="text-sm font-bold text-white">{city.name.split(' (')[0]}</h2>
-            <span className="text-[9px] font-mono text-yellow-400 bg-yellow-400/10 px-1 rounded border border-yellow-400/20">
+            <h2 className="text-lg font-black text-white">{city.name.split(' (')[0]}</h2>
+            <span className="text-[11px] font-mono text-yellow-400 bg-yellow-400/20 px-2 py-0.5 rounded border border-yellow-400/30">
               {ALGORITHMS[algorithm].name.replace(' Search', '')}
             </span>
           </div>
         </div>
         
-        <div className="p-2 bg-gray-800/80 rounded text-[10px] border border-gray-700/50 space-y-1 font-mono">
-          <div className="flex justify-between">
-            <span className="text-gray-400 text-[9px]">EXPLORED</span>
-            <span className="text-cyan-400 font-bold">{stats.edges}</span>
+        <div className="p-3.5 bg-gray-950/80 rounded-xl text-sm border border-gray-800 space-y-2.5 font-mono shadow-inner">
+          <div className="flex justify-between items-center">
+            <span className="text-gray-500 text-[11px] font-bold tracking-wider">EXPLORED</span>
+            <span className="text-cyan-400 font-black text-lg leading-none">{stats.edges}</span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-gray-400 text-[9px]">TIME</span>
-            <span className="text-green-400">{((stats.time || 0) / 1000).toFixed(2)}s</span>
+          <div className="flex justify-between items-center border-t border-gray-900 pt-2">
+            <span className="text-gray-500 text-[11px] font-bold tracking-wider">TIME</span>
+            <span className="text-green-400 font-bold text-base leading-none">{((stats.time || 0) / 1000).toFixed(2)}s</span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-gray-400 text-[9px]">DIST</span>
-            <span className="text-orange-400 font-bold">{(stats.distance || 0).toFixed(0)}m</span>
+          <div className="flex justify-between items-center border-t border-gray-900 pt-2">
+            <span className="text-gray-500 text-[11px] font-bold tracking-wider">DISTANCE</span>
+            <span className="text-orange-400 font-black text-lg leading-none">{(stats.distance || 0).toFixed(0)}m</span>
           </div>
         </div>
-        {status === 'success' && <div className="mt-1 text-green-400 text-[9px] font-bold text-center tracking-wider">✓ COMPLETE</div>}
-        {status === 'running' && <p className="mt-1.5 text-cyan-400 text-[10px] font-mono tracking-tighter">RUNNING{processingDots}</p>}
+        {status === 'success' && <div className="mt-3 text-green-400 text-sm font-black text-center tracking-[0.3em] bg-green-400/10 py-1.5 rounded-lg border border-green-400/20">✓ MISSION COMPLETE</div>}
+        {status === 'running' && <p className="mt-3 text-cyan-400 text-xs font-black font-mono tracking-widest text-center animate-pulse">RUNNING SYSTEM{processingDots}</p>}
       </div>
 
       {/* Destination HUD Overlay - Draggable & High Contrast for Longform */}
@@ -992,12 +993,12 @@ const RealMapVisualizer = () => {
           onPointerMove={handleHudPointerMove}
           onPointerUp={handleHudPointerUp}
         >
-          <div className="bg-gray-900/95 backdrop-blur-xl border-2 border-yellow-500/80 px-5 py-2 rounded-2xl flex items-center gap-4 shadow-[0_0_30px_rgba(234,179,8,0.3)] animate-fade-in-up">
+          <div className="bg-gray-900/95 backdrop-blur-xl border-2 border-yellow-500/80 px-8 py-4 rounded-3xl flex items-center gap-6 shadow-[0_0_50px_rgba(234,179,8,0.4)] animate-fade-in-up hover:scale-105 transition-transform">
             <div className="flex flex-col">
-              <span className="text-[10px] font-black text-yellow-500 tracking-[0.2em] uppercase leading-none mb-1">Next Stop</span>
-              <span className="text-sm font-bold text-white tracking-wide drop-shadow-sm">{currentDestName}</span>
+              <span className="text-[11px] font-black text-yellow-500 tracking-[0.3em] uppercase leading-none mb-2">TARGET DESTINATION</span>
+              <span className="text-xl font-black text-white tracking-widest drop-shadow-md uppercase italic">{currentDestName}</span>
             </div>
-            <div className="h-6 w-[2px] bg-yellow-500/30 rounded-full"></div>
+            <div className="h-10 w-[3px] bg-yellow-500/40 rounded-full shadow-[0_0_10px_rgba(234,179,8,0.5)]"></div>
             <div className="text-xl">🎯</div>
           </div>
         </div>
