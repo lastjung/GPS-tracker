@@ -17,5 +17,5 @@ export const findNearestNodeCoords = (nodes, lat, lng) => {
       nearestCoords = { lat: node.lat, lng: node.lon }; 
     }
   }
-  return minDist > 0.0003 ? null : { ...nearestCoords, id: nearestId };
+  return minDist > 0.001 ? null : { ...nearestCoords, id: nearestId };
 };

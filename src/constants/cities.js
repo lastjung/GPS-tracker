@@ -247,4 +247,23 @@ export const CITIES = {
     start: { lat: 52.3791, lng: 4.8994, name: "Centraal Station START" },
     end: { lat: 52.3741, lng: 4.9123, name: "NEMO Science Museum END" },
   },
+  florida: {
+    name: "Florida (Miami North Beach Zigzag)",
+    center: [25.830, -80.14],
+    waypoints: [
+      { lat: 25.7656, lng: -80.1345, name: "South Pointe Park START" },
+      { lat: 25.7860, lng: -80.1300, name: "Mid-Beach (Collins Ave)" },
+      { lat: 25.8140, lng: -80.1235, name: "Fontainebleau (North)" },
+      { lat: 25.8600, lng: -80.1215, name: "North Beach (Harding Ave)" },
+      { lat: 25.8900, lng: -80.1230, name: "Bal Harbour (Northern Turn)" },
+      { lat: 25.8490, lng: -80.1650, name: "Broad Causeway (Zigzag 1)" },
+      { lat: 25.8450, lng: -80.1850, name: "North Miami (Mainland)" },
+      { lat: 25.8115, lng: -80.1650, name: "Julia Tuttle Cswy (Zigzag 2)" },
+      { lat: 25.8015, lng: -80.1995, name: "Wynwood Walls" },
+      { lat: 25.7915, lng: -80.1620, name: "Venetian Cswy (Zigzag 3)" },
+      // Removed MacArthur Cswy (Zigzag 4)
+    ],
+    start: { lat: 25.7656, lng: -80.1345, name: "South Pointe Park START" },
+    end: { lat: 25.7915, lng: -80.1620, name: "Venetian Cswy (Zigzag 3) END" }, // New End
+  },
 };
