@@ -293,8 +293,8 @@ const RealMapVisualizer = () => {
       const minLng = Math.min(...lngs);
       const maxLng = Math.max(...lngs);
       
-      // Milan needs extra wide padding for the stadium to be included
-      const padding = key === 'milan' ? 0.07 : 0.04; 
+      // Vancouver needs extra padding too
+      const padding = (key === 'milan' || key === 'vancouver') ? 0.07 : 0.04; 
       setBounds({
         south: minLat - padding,
         north: maxLat + padding,

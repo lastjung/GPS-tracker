@@ -182,8 +182,6 @@ export const CITIES = {
       { lat: 49.2855, lng: -123.1085, name: "Waterfront Maze" },
       { lat: 49.2827, lng: -123.1067, name: "Gastown Steam Clock" },
       { lat: 49.2805, lng: -123.1025, name: "Chinatown Gate" },
-      { lat: 49.2735, lng: -123.1015, name: "Science World" },
-      { lat: 49.2818, lng: -123.1171, name: "Central Library" },
       { lat: 49.2768, lng: -123.112, name: "BC Place END" }
     ],
     start: { lat: 49.3017, lng: -123.1298, name: "Stanley Park START" },
@@ -265,5 +263,24 @@ export const CITIES = {
     ],
     start: { lat: 25.7656, lng: -80.1345, name: "South Pointe Park START" },
     end: { lat: 25.7915, lng: -80.1620, name: "Venetian Cswy (Zigzag 3) END" }, // New End
+  },
+  boston: {
+    name: "Boston (Big Dig & Historical Labyrinth)",
+    center: [42.3601, -71.0589],
+    waypoints: [
+      { lat: 42.3662, lng: -71.0621, name: "TD Garden START" },
+      { lat: 42.3601, lng: -71.0562, name: "Faneuil Hall" },
+      { lat: 42.3519, lng: -71.0416, name: "Seaport District" },
+      { lat: 42.3519, lng: -71.0551, name: "South Station" },
+      { lat: 42.3550, lng: -71.0657, name: "Boston Common" },
+      { lat: 42.3588, lng: -71.0638, name: "Beacon Hill" },
+      { lat: 42.3615, lng: -71.0740, name: "Longfellow Bridge" },
+      { lat: 42.3601, lng: -71.0850, name: "Memorial Drive (Cambridge)" },
+      { lat: 42.3551, lng: -71.0916, name: "Harvard Bridge (Mass Ave)" },
+      { lat: 42.3511, lng: -71.0850, name: "Back Bay" },
+      { lat: 42.3467, lng: -71.0972, name: "Fenway Park END" }
+    ],
+    start: { lat: 42.3662, lng: -71.0621, name: "TD Garden START" },
+    end: { lat: 42.3467, lng: -71.0972, name: "Fenway Park END" },
   },
 };

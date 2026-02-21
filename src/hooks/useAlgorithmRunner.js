@@ -140,7 +140,7 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
     const step = () => {
       let iterations = 0;
       let lastValue = null;
-      let baseSteps = speed <= 10 ? 20 : speed <= 25 ? 50 : 120;
+      let baseSteps = speed <= 2 ? 1 : speed <= 5 ? 3 : speed <= 10 ? 15 : speed <= 25 ? 50 : 120;
       
       // Turbo Mode: Scale iteration count by the number of visited edges to prevent late-stage lag
       const turboFactor = isTurboMode ? Math.max(1, Math.floor((accumulatedVisited.length + 1000) / 1000)) : 1;
@@ -177,7 +177,7 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
         });
         
         if (currentEdges.length % 50 === 0) playSearchTick();
-        const delay = Math.max(1, 41 - speed); 
+        const delay = speed <= 10 ? (11 - speed) * 15 : Math.max(1, 41 - speed); 
         animationRef.current = setTimeout(step, delay);
 
       } else if (lastValue.type === 'found') {

@@ -10,7 +10,7 @@ const fetchRoadNetwork = async (bounds, signal) => {
 
   const makeQuery = (b, timeoutSeconds) => `
     [out:json][timeout:${timeoutSeconds}];
-    way["highway"~"motorway|trunk|primary|secondary|tertiary|residential"](${b.south},${b.west},${b.north},${b.east});
+    way["highway"~"motorway|trunk|primary|secondary|tertiary|residential|service|unclassified|living_street"](${b.south},${b.west},${b.north},${b.east});
     (._;>;);
     out body;
   `;

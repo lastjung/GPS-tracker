@@ -77,7 +77,7 @@ export function* astarOnGraph(nodes, edges, startId, endId) {
       if (gScore[neighborId] === undefined || tentativeG < gScore[neighborId]) {
         previous[neighborId] = currentId;
         gScore[neighborId] = tentativeG;
-        fScore[neighborId] = tentativeG + (heuristic(neighborId) * 1.2);
+        fScore[neighborId] = tentativeG + heuristic(neighborId);
         openSet.add(neighborId);
         visitedEdges.push([[nodes[currentId].lat, nodes[currentId].lon], [nodes[neighborId].lat, nodes[neighborId].lon]]);
         yield { type: 'visiting', visitedEdges: [...visitedEdges], currentDistance: tentativeG };
