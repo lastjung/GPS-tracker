@@ -47,6 +47,20 @@ export const CITIES = {
     start: { lat: 37.5512, lng: 126.9882, name: "N Seoul Tower START" },
     end: { lat: 37.5125, lng: 127.1025, name: "Lotte World Tower END" },
   },
+  gwanghwamun: {
+    name: "Seoul (BTS Gwanghwamun Stage)",
+    center: [37.5716, 126.9768],
+    zoom: 16,
+    waypoints: [
+      { lat: 37.5745, lng: 126.9760, name: "Sejong-daero (North)" },
+      { lat: 37.5740, lng: 126.9768, name: "Main Stage (Inside Square)" },
+      { lat: 37.5716, lng: 126.9768, name: "King Sejong Statue" },
+      { lat: 37.5701, lng: 126.9780, name: "Sejong-daero (Middle)" },
+      { lat: 37.5665, lng: 126.9780, name: "Seoul City Hall" }
+    ],
+    start: { lat: 37.5745, lng: 126.9760, name: "Sejong-daero (North)" },
+    end: { lat: 37.5665, lng: 126.9780, name: "Seoul City Hall" },
+  },
   barcelona: {
     name: "Barcelona (Full Grid)",
     center: [41.393, 2.17],
@@ -283,4 +297,22 @@ export const CITIES = {
     start: { lat: 42.3662, lng: -71.0621, name: "TD Garden START" },
     end: { lat: 42.3467, lng: -71.0972, name: "Fenway Park END" },
   },
+  guadalajara: {
+    name: "Guadalajara (Minerva to Tlaquepaque)",
+    center: [20.672, -103.34],
+    waypoints: [
+      { lat: 20.6744, lng: -103.3916, name: "La Minerva START" },
+      { lat: 20.675, lng: -103.375, name: "Colonia Americana" },
+      { lat: 20.6765, lng: -103.359, name: "Templo Expiatorio" },
+      { lat: 20.6772, lng: -103.347, name: "Palacio de Gobierno" },
+      { lat: 20.677, lng: -103.344, name: "Guadalajara Cathedral" },
+      { lat: 20.6755, lng: -103.34, name: "Degollado Theatre" },
+      { lat: 20.674, lng: -103.336, name: "Hospicio Cabañas" },
+      { lat: 20.665, lng: -103.33, name: "Near Mercado del Mar" },
+      { lat: 20.64, lng: -103.313, name: "Tlaquepaque Centro END" }
+    ],
+    start: { lat: 20.6744, lng: -103.3916, name: "La Minerva START" },
+    end: { lat: 20.64, lng: -103.313, name: "Tlaquepaque Centro END" },
+  },
 };
+

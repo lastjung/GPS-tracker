@@ -12,9 +12,10 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
   const [finalPath, setFinalPath] = useState([]);
   const [processingDots, setProcessingDots] = useState('');
   const [currentDestName, setCurrentDestName] = useState(null);
+  const [failedSegment, setFailedSegment] = useState(null);
   
   // UI Control states
-  const [speed, setSpeed] = useState(4);
+  const [speed, setSpeed] = useState(15);
   const [algorithm, setAlgorithm] = useState('astar');
   const [density, setDensity] = useState(1);
   const [showVisualization, setShowVisualization] = useState(true);
@@ -62,6 +63,7 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
     setVisitedEdges([]);
     setFinalPath([]);
     setStats({ edges: 0, time: 0, distance: 0 });
+    setFailedSegment(null);
     
     const algoFn = algoFns[algorithm];
     if (!algoFn) {
@@ -115,6 +117,7 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
             accumulatedDistance += result.totalDistance;
             totalEdges += result.visitedEdges.length;
           } else {
+            setFailedSegment({ from: points[i].name || `Point ${i}`, to: points[i+1].name || `Point ${i+1}` });
             setStatus('no_path');
             stop();
             return;
@@ -217,6 +220,7 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
 
       } else {
         // Not found in current segment
+        setFailedSegment({ from: points[currentSegment].name || `Point ${currentSegment}`, to: points[currentSegment+1].name || `Point ${currentSegment+1}` });
         stop();
         setStatus('no_path');
         setCurrentDestName(null);
@@ -230,6 +234,7 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
     isRunning, status, setStatus, stats, setStats, visitedEdges, setVisitedEdges, finalPath, setFinalPath, processingDots, setProcessingDots,
     currentDestName, setCurrentDestName,
     speed, setSpeed, algorithm, setAlgorithm, density, setDensity, showVisualization, setShowVisualization, isTurboMode, setIsTurboMode,
+    failedSegment,
     run, stop, reset
   };
 };

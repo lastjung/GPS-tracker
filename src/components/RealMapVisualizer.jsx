@@ -167,7 +167,7 @@ const ChangeView = ({ center, isMapLocked, isShortsMode, city, waypoints }) => {
 };
 
 const RealMapVisualizer = () => {
-  const [cityKey, setCityKey] = useState('newyork');
+  const [cityKey, setCityKey] = useState('gwanghwamun');
   const city = CITIES[cityKey];
   const [bounds, setBounds] = useState(null);
   const [delayedStart, setDelayedStart] = useState(false);
@@ -181,6 +181,14 @@ const RealMapVisualizer = () => {
   const [isShortsMode, setIsShortsMode] = useState(false);
   const [isPreparing, setIsPreparing] = useState(false);
   const [isMenuCollapsed, setIsMenuCollapsed] = useState(false);
+  const [mapStyle, setMapStyle] = useState('satellite');
+
+  const MAP_STYLES = {
+    dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    light: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    street: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+    satellite: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+  };
 
   // Custom Hooks
   const { graph, setGraph, isLoading, error: networkError, setIsLoading, fetchRoadNetwork, buildGraph } = useRoadNetwork(bounds, cityKey);
@@ -216,6 +224,7 @@ const RealMapVisualizer = () => {
     setShowVisualization,
     isTurboMode,
     setIsTurboMode,
+    failedSegment,
     run: runAlgorithmCore,
     stop: stopAlgorithm,
     reset: resetAlgorithm
@@ -293,8 +302,8 @@ const RealMapVisualizer = () => {
       const minLng = Math.min(...lngs);
       const maxLng = Math.max(...lngs);
       
-      // Vancouver needs extra padding too
-      const padding = (key === 'milan' || key === 'vancouver') ? 0.07 : 0.04; 
+      // Vancouver needs extra padding, Gwanghwamun needs VERY LITTLE padding to stay focused
+      const padding = (key === 'milan' || key === 'vancouver') ? 0.07 : (key === 'gwanghwamun' ? 0.03 : 0.04); 
       setBounds({
         south: minLat - padding,
         north: maxLat + padding,
@@ -310,7 +319,7 @@ const RealMapVisualizer = () => {
     
     // Default to A* for all cities
     setAlgorithm('astar');
-    setSpeed(4);
+    setSpeed(15);
     
     setGraph({ nodes: {}, edges: {}, ways: [] }); 
     setVisitedEdges([]);
@@ -498,7 +507,7 @@ const RealMapVisualizer = () => {
     if (isRecording && status === 'success') {
       const timer = setTimeout(() => {
         stopRecording();
-      }, 1500);
+      }, 3500);
       return () => clearTimeout(timer);
     }
   }, [isRecording, status, stopRecording]);
@@ -676,7 +685,9 @@ const RealMapVisualizer = () => {
             className="flex flex-col cursor-grab active:cursor-grabbing select-none"
             onPointerDown={handleMenuPointerDown}
           >
-            <h1 className="text-[11px] font-black tracking-[0.2em] text-cyan-400 leading-none mb-1.5">ELITE PATH PASS</h1>
+            <h1 className="text-[11px] font-black tracking-[0.2em] text-cyan-400 leading-none mb-1.5">
+              {cityKey === 'gwanghwamun' ? 'BTS LIVE STAGE' : 'ELITE PATH PASS'}
+            </h1>
             <div className="flex items-baseline gap-2">
               <h2 className="text-lg font-black text-white">{city.name}</h2>
               <span className="text-[11px] font-mono text-yellow-400 bg-yellow-400/20 px-2 py-0.5 rounded border border-yellow-400/30">
@@ -817,6 +828,26 @@ const RealMapVisualizer = () => {
                 <label htmlFor="turboToggle" className="text-[11px] text-yellow-500 font-black cursor-pointer italic">TURBO</label>
               </div>
             </div>
+            
+            {/* Map Style Selector */}
+            <div className="flex flex-col gap-1.5 mb-4">
+              <label className="text-[11px] font-bold text-gray-400 tracking-wider">MAP STYLE</label>
+              <div className="grid grid-cols-2 gap-2">
+                {Object.keys(MAP_STYLES).map((style) => (
+                  <button
+                    key={style}
+                    onClick={() => setMapStyle(style)}
+                    className={`text-[10px] py-1.5 rounded-md font-bold transition-all border ${
+                      mapStyle === style 
+                        ? 'bg-cyan-600 border-cyan-400 shadow-lg' 
+                        : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'
+                    }`}
+                  >
+                    {style.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
@@ -890,7 +921,19 @@ const RealMapVisualizer = () => {
               Calculating{processingDots}
             </p>
           )}
-          {status === 'no_path' && <p className="text-red-400 text-sm">❌ No connected path found.</p>}
+          {status === 'no_path' && (
+            <div className="bg-red-950/40 p-3 rounded-lg border border-red-500/30">
+              <p className="text-red-400 text-sm font-bold flex items-center gap-2">
+                <span>❌ No path found</span>
+              </p>
+              {failedSegment && (
+                <p className="text-red-300/80 text-[10px] mt-1 font-mono leading-tight">
+                  Disconnect: <span className="text-white font-bold">{failedSegment.from}</span> 
+                  <br/>→ <span className="text-white font-bold">{failedSegment.to}</span>
+                </p>
+              )}
+            </div>
+          )}
           {status === 'click_too_far' && <p className="text-orange-400 text-sm">⚠️ Too far from road. Click on blue lines!</p>}
           {status === 'error_loading' && <p className="text-red-500 text-sm">❌ Loading failed. Please retry.</p>}
           {!isLoading && status !== 'error_loading' && graph.ways.length === 0 && (
@@ -953,7 +996,9 @@ const RealMapVisualizer = () => {
           className="flex flex-col mb-4 cursor-grab active:cursor-grabbing select-none"
           onPointerDown={handleScorePointerDown}
         >
-          <h1 className="text-[11px] font-black tracking-[0.2em] text-cyan-400 leading-none mb-1.5">ELITE PATH PASS</h1>
+          <h1 className="text-[11px] font-black tracking-[0.2em] text-cyan-400 leading-none mb-1.5">
+            {cityKey === 'gwanghwamun' ? 'BTS LIVE STAGE' : 'ELITE PATH PASS'}
+          </h1>
           <div className="flex items-baseline gap-2">
             <h2 className="text-lg font-black text-white">{city.name.split(' (')[0]}</h2>
             <span className="text-[11px] font-mono text-yellow-400 bg-yellow-400/20 px-2 py-0.5 rounded border border-yellow-400/30">
@@ -976,7 +1021,11 @@ const RealMapVisualizer = () => {
             <span className="text-orange-400 font-black text-lg leading-none">{(stats.distance || 0).toFixed(0)}m</span>
           </div>
         </div>
-        {status === 'success' && <div className="mt-3 text-green-400 text-sm font-black text-center tracking-[0.3em] bg-green-400/10 py-1.5 rounded-lg border border-green-400/20">✓ MISSION COMPLETE</div>}
+        {status === 'success' && (
+          <div className="mt-3 text-green-400 text-sm font-black text-center tracking-[0.3em] bg-green-400/10 py-1.5 rounded-lg border border-green-400/20">
+            {cityKey === 'gwanghwamun' ? '✓ CONCERT READY' : '✓ MISSION COMPLETE'}
+          </div>
+        )}
         {status === 'running' && <p className="mt-3 text-cyan-400 text-xs font-black font-mono tracking-widest text-center animate-pulse">RUNNING SYSTEM{processingDots}</p>}
       </div>
 
@@ -1008,7 +1057,7 @@ const RealMapVisualizer = () => {
       <MapContainer 
         key={cityKey}
         center={city.center} 
-        zoom={13} 
+        zoom={city.zoom || 13} 
         zoomControl={false}
         preferCanvas={true}
         className={`w-full h-full ${isRunning ? 'map-dimmed' : 'map-normal'}`}
@@ -1019,8 +1068,8 @@ const RealMapVisualizer = () => {
         )}
         <ChangeView center={city.center} isMapLocked={isMapLocked} isShortsMode={isShortsMode} city={city} waypoints={waypoints} />
         <TileLayer
-          attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          attribution={mapStyle === 'satellite' ? 'Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community' : '&copy; <a href="https://carto.com/">CARTO</a>'}
+          url={MAP_STYLES[mapStyle]}
         />
         <RoadLoader setBounds={setBounds} isMapLocked={isMapLocked} />
         <MapClickHandler
@@ -1087,17 +1136,21 @@ const RealMapVisualizer = () => {
         
         {/* Start/End/Waypoints markers */}
         {/* Start/End/Waypoints markers */}
-        {waypoints.map((pt, i) => (
-           <CircleMarker 
-             key={i} 
-             center={pt} 
-             radius={8} 
-             fillColor={i === 0 ? "#22c55e" : "#ef4444"} 
-             fillOpacity={1} 
-             color="#fff" 
-             weight={2} 
-           />
-        ))}
+        {waypoints.map((pt, i) => {
+           const isBts = pt.name?.includes('BTS');
+           return (
+             <CircleMarker 
+               key={i} 
+               center={pt} 
+               radius={isBts ? 12 : 8} 
+               fillColor={isBts ? "#a855f7" : (i === 0 ? "#22c55e" : "#ef4444")} 
+               fillOpacity={1} 
+               color="#fff" 
+               weight={2} 
+               className={isBts ? 'animate-pulse' : ''}
+             />
+           );
+        })}
       </MapContainer>
     </div>
   );

@@ -10,7 +10,7 @@ const fetchRoadNetwork = async (bounds, signal) => {
 
   const makeQuery = (b, timeoutSeconds) => `
     [out:json][timeout:${timeoutSeconds}];
-    way["highway"~"motorway|trunk|primary|secondary|tertiary|residential|service|unclassified|living_street"](${b.south},${b.west},${b.north},${b.east});
+    way["highway"~"motorway|trunk|primary|secondary|tertiary|residential|service|unclassified|living_street|pedestrian|footway|path"](${b.south},${b.west},${b.north},${b.east});
     (._;>;);
     out body;
   `;
@@ -29,8 +29,7 @@ const fetchRoadNetwork = async (bounds, signal) => {
   };
 
   const attempts = [
-    { bounds, timeout: 35 },
-    { bounds: shrinkBounds(bounds, 0.8), timeout: 40 }
+    { bounds, timeout: 15 } // Reduced timeout for faster failure/fallback
   ];
 
   for (const attempt of attempts) {
@@ -50,61 +49,60 @@ const fetchRoadNetwork = async (bounds, signal) => {
     }
   }
   
-  // Fallback to local data if all servers fail
-  // We use fetch to load data from public/data folder to avoid bundling large JSON files
+  // Fallback to local data if all servers fail or for quick match
   const centerLat = (bounds.north + bounds.south) / 2;
   const centerLon = (bounds.east + bounds.west) / 2;
-  
-  const baseUrl = import.meta.env.BASE_URL; // e.g. /GPS-tracker/ or /
+  const RANGE = 0.5; // Expanded match range
+  const baseUrl = import.meta.env.BASE_URL; // RESTORED: Required for local fetch
 
   let localFile = null;
 
   // Toronto approx: 43.66, -79.36
-  if (Math.abs(centerLat - 43.66) < 0.2 && Math.abs(centerLon - (-79.36)) < 0.2) {
+  if (Math.abs(centerLat - 43.66) < RANGE && Math.abs(centerLon - (-79.36)) < RANGE) {
     localFile = 'toronto.json';
   }
   // Seoul approx: 37.56, 126.97
-  else if (Math.abs(centerLat - 37.56) < 0.2 && Math.abs(centerLon - 126.97) < 0.2) {
+  else if (Math.abs(centerLat - 37.56) < RANGE && Math.abs(centerLon - 126.97) < RANGE) {
     localFile = 'seoul.json';
   }
   // New York approx: 40.75, -73.98
-  else if (Math.abs(centerLat - 40.75) < 0.2 && Math.abs(centerLon - (-73.98)) < 0.2) {
+  else if (Math.abs(centerLat - 40.75) < RANGE && Math.abs(centerLon - (-73.98)) < RANGE) {
     localFile = 'new_york.json';
   }
   // Tokyo approx: 35.67, 139.77
-  else if (Math.abs(centerLat - 35.67) < 0.2 && Math.abs(centerLon - 139.77) < 0.2) {
+  else if (Math.abs(centerLat - 35.67) < RANGE && Math.abs(centerLon - 139.77) < RANGE) {
     localFile = 'tokyo.json';
   }
   // Barcelona approx: 41.39, 2.17
-  else if (Math.abs(centerLat - 41.39) < 0.2 && Math.abs(centerLon - 2.17) < 0.2) {
+  else if (Math.abs(centerLat - 41.39) < RANGE && Math.abs(centerLon - 2.17) < RANGE) {
     localFile = 'barcelona.json';
   }
   // Paris approx: 48.87, 2.29
-  else if (Math.abs(centerLat - 48.87) < 0.2 && Math.abs(centerLon - 2.29) < 0.2) {
+  else if (Math.abs(centerLat - 48.87) < RANGE && Math.abs(centerLon - 2.29) < RANGE) {
     localFile = 'paris.json';
   }
   // London approx: 51.50, -0.07
-  else if (Math.abs(centerLat - 51.50) < 0.2 && Math.abs(centerLon - (-0.07)) < 0.2) {
+  else if (Math.abs(centerLat - 51.50) < RANGE && Math.abs(centerLon - (-0.07)) < RANGE) {
     localFile = 'london.json';
   }
   // San Francisco approx: 37.81, -122.47
-  else if (Math.abs(centerLat - 37.81) < 0.2 && Math.abs(centerLon - (-122.47)) < 0.2) {
+  else if (Math.abs(centerLat - 37.81) < RANGE && Math.abs(centerLon - (-122.47)) < RANGE) {
     localFile = 'sanfrancisco.json';
   }
   // Moscow approx: 55.75, 37.62
-  else if (Math.abs(centerLat - 55.75) < 0.2 && Math.abs(centerLon - 37.62) < 0.2) {
+  else if (Math.abs(centerLat - 55.75) < RANGE && Math.abs(centerLon - 37.62) < RANGE) {
     localFile = 'moscow.json';
   }
   // Dubai approx: 25.11, 55.13
-  else if (Math.abs(centerLat - 25.11) < 0.2 && Math.abs(centerLon - 55.13) < 0.2) {
+  else if (Math.abs(centerLat - 25.11) < RANGE && Math.abs(centerLon - 55.13) < RANGE) {
     localFile = 'dubai.json';
   }
   // Mexico City approx: 19.43, -99.13
-  else if (Math.abs(centerLat - 19.43) < 0.2 && Math.abs(centerLon - (-99.13)) < 0.2) {
+  else if (Math.abs(centerLat - 19.43) < RANGE && Math.abs(centerLon - (-99.13)) < RANGE) {
     localFile = 'mexicocity.json';
   }
   // Rome approx: 41.90, 12.49
-  else if (Math.abs(centerLat - 41.90) < 0.2 && Math.abs(centerLon - 12.49) < 0.2) {
+  else if (Math.abs(centerLat - 41.90) < RANGE && Math.abs(centerLon - 12.49) < RANGE) {
     localFile = 'rome.json';
   }
 
