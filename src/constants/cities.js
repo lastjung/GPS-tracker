@@ -314,5 +314,23 @@ export const CITIES = {
     start: { lat: 20.6744, lng: -103.3916, name: "La Minerva START" },
     end: { lat: 20.64, lng: -103.313, name: "Tlaquepaque Centro END" },
   },
+  tehran: {
+    name: "Tehran (Modern Maze - Conflict Zone)",
+    center: [35.6892, 51.3890],
+    waypoints: [
+      { lat: 35.6930, lng: 51.3460, name: "Ostad Moayyen Alley START" }, // Residential area with narrow streets
+      { lat: 35.7000, lng: 51.3700, name: "Azadi Avenue (Main Road)" },
+      { lat: 35.6910, lng: 51.3925, name: "Pasteur Square (Gov Area)" }, // Fixed longitude typo
+      { lat: 35.7007, lng: 51.4050, name: "Enghelab Street (University Area)" },
+      { lat: 35.7016, lng: 51.4192, name: "Ferdowsi Square (Intersection)" }, // Ferdowsi Sq
+      { lat: 35.6888, lng: 51.4120, name: "Imam Khomeini St (Judiciary District)" }, // Near Judiciary
+      { lat: 35.6780, lng: 51.4172, name: "15th Khordad St Entrance" }, // Bazaar Entrance
+      { lat: 35.6775, lng: 51.4210, name: "Naser Khosrow St (Palace Gate)" }, // Palace Gate
+      { lat: 35.7448, lng: 51.3753, name: "Milad Tower" },
+      { lat: 35.7548, lng: 51.4226, name: "Tabiat Bridge END" },
+    ],
+    start: { lat: 35.6997, lng: 51.3380, name: "Azadi Tower START" },
+    end: { lat: 35.7548, lng: 51.4226, name: "Tabiat Bridge END" },
+  },
 };
 

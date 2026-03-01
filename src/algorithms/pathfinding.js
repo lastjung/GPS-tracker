@@ -72,14 +72,23 @@ export function* astarOnGraph(nodes, edges, startId, endId) {
     const neighbors = edges[currentId] || [];
     for (const neighborId of neighbors) {
       if (visited.has(neighborId)) continue;
-      const weight = haversine(nodes[currentId].lat, nodes[currentId].lon, nodes[neighborId].lat, nodes[neighborId].lon);
+      
+      const current = nodes[currentId];
+      const neighbor = nodes[neighborId];
+      const weight = haversine(current.lat, current.lon, neighbor.lat, neighbor.lon);
       const tentativeG = gScore[currentId] + weight;
+      
       if (gScore[neighborId] === undefined || tentativeG < gScore[neighborId]) {
         previous[neighborId] = currentId;
         gScore[neighborId] = tentativeG;
-        fScore[neighborId] = tentativeG + heuristic(neighborId);
+        
+        // Stable Exploratory A*: Low weight (0.8) for more organic spread
+        // Removed random noise to prevent chaos as requested.
+        const rawH = heuristic(neighborId);
+        fScore[neighborId] = tentativeG + (rawH * 0.8); 
+        
         openSet.add(neighborId);
-        visitedEdges.push([[nodes[currentId].lat, nodes[currentId].lon], [nodes[neighborId].lat, nodes[neighborId].lon]]);
+        visitedEdges.push([[current.lat, current.lon], [neighbor.lat, neighbor.lon]]);
         yield { type: 'visiting', visitedEdges: [...visitedEdges], currentDistance: tentativeG };
       }
     }

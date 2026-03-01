@@ -105,6 +105,10 @@ const fetchRoadNetwork = async (bounds, signal) => {
   else if (Math.abs(centerLat - 41.90) < RANGE && Math.abs(centerLon - 12.49) < RANGE) {
     localFile = 'rome.json';
   }
+  // Tehran approx: 35.68, 51.38
+  else if (Math.abs(centerLat - 35.68) < RANGE && Math.abs(centerLon - 51.38) < RANGE) {
+    localFile = 'tehran.json';
+  }
 
   if (localFile) {
     const response = await fetch(`${baseUrl}data/${localFile}`);
