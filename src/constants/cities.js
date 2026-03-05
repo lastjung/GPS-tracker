@@ -332,5 +332,19 @@ export const CITIES = {
     start: { lat: 35.6997, lng: 51.3380, name: "Azadi Tower START" },
     end: { lat: 35.7548, lng: 51.4226, name: "Tabiat Bridge END" },
   },
+  dc: {
+    name: "Washington D.C. (National Mall Circuit)",
+    center: [38.8895, -77.0352],
+    waypoints: [
+      { lat: 38.8913, lng: -77.0486, name: "Lincoln Memorial START" }, // Henry Bacon Dr NW
+      { lat: 38.8898, lng: -77.0404, name: "WWII Memorial" },           // 17th St NW
+      { lat: 38.8895, lng: -77.0353, name: "Washington Monument" },     // 15th St NW
+      { lat: 38.8977, lng: -77.0365, name: "The White House" },
+      { lat: 38.8921, lng: -77.0300, name: "National Museum of American History" },
+      { lat: 38.8913, lng: -77.0199, name: "National Gallery of Art END" }
+    ],
+    start: { lat: 38.8913, lng: -77.0486, name: "Lincoln Memorial START" },
+    end: { lat: 38.8913, lng: -77.0199, name: "National Gallery of Art END" },
+  },
 };
 

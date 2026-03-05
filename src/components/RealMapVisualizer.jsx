@@ -167,7 +167,7 @@ const ChangeView = ({ center, isMapLocked, isShortsMode, city, waypoints }) => {
 };
 
 const RealMapVisualizer = () => {
-  const [cityKey, setCityKey] = useState('gwanghwamun');
+  const [cityKey, setCityKey] = useState('dc');
   const city = CITIES[cityKey];
   const [bounds, setBounds] = useState(null);
   const [delayedStart, setDelayedStart] = useState(false);
@@ -181,7 +181,7 @@ const RealMapVisualizer = () => {
   const [isShortsMode, setIsShortsMode] = useState(false);
   const [isPreparing, setIsPreparing] = useState(false);
   const [isMenuCollapsed, setIsMenuCollapsed] = useState(false);
-  const [mapStyle, setMapStyle] = useState('satellite');
+  const [mapStyle, setMapStyle] = useState('street');
 
   const MAP_STYLES = {
     dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
@@ -724,11 +724,24 @@ const RealMapVisualizer = () => {
             {/* Coordinates Display - Multi-waypoint aware */}
             <div className="flex flex-col gap-1.5 mb-4 bg-gray-950/60 p-3 rounded-lg border border-gray-800 font-mono text-[11px] max-h-40 overflow-y-auto custom-scrollbar shadow-inner">
               {waypoints.map((pt, idx) => (
-                <div key={idx} className="flex justify-between items-center">
-                  <span className="font-bold" style={{ color: idx === 0 ? '#4ade80' : idx === waypoints.length - 1 ? '#f87171' : '#60a5fa' }}>
+                <div 
+                  key={idx} 
+                  className="flex justify-between items-center cursor-pointer hover:bg-white/5 px-1 py-0.5 rounded transition-colors group"
+                  onDoubleClick={() => {
+                    if (isRunning) return;
+                    const newPts = [...waypoints];
+                    newPts.splice(idx, 1);
+                    setWaypoints(newPts);
+                    setVisitedEdges([]);
+                    setFinalPath([]);
+                    setStatus('idle');
+                  }}
+                  title="Double click to remove"
+                >
+                  <span className="font-bold whitespace-nowrap" style={{ color: idx === 0 ? '#4ade80' : idx === waypoints.length - 1 ? '#f87171' : '#60a5fa' }}>
                     {idx === 0 ? 'START' : idx === waypoints.length - 1 ? 'END' : `WAY ${idx}`}
                   </span>
-                  <span className="text-gray-300 truncate max-w-[160px] ml-2" title={pt.name || `${pt.lat.toFixed(4)}, ${pt.lng.toFixed(4)}`}>
+                  <span className="text-gray-300 truncate ml-2 text-right w-full" title={pt.name || `${pt.lat.toFixed(4)}, ${pt.lng.toFixed(4)}`}>
                     {pt.name || `${pt.lat.toFixed(4)}, ${pt.lng.toFixed(4)}`}
                   </span>
                 </div>
