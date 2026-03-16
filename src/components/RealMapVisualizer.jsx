@@ -22,6 +22,7 @@ const RoadLoader = ({ setBounds, isMapLocked }) => {
   const map = useMap();
   
   useEffect(() => {
+    // Proactive bounds update for road loading
     const updateBounds = () => {
       const b = map.getBounds();
       if (!b) return;
@@ -33,13 +34,17 @@ const RoadLoader = ({ setBounds, isMapLocked }) => {
       });
     };
     
-    // Always listen for moveend so programmatic flyToBounds updates bounds
+    map.on('move', updateBounds);
     map.on('moveend', updateBounds);
+    map.on('zoomend', updateBounds);
     
-    // Always trigger once on load/lock change to ensure initial data
     updateBounds();
     
-    return () => map.off('moveend', updateBounds);
+    return () => {
+      map.off('move', updateBounds);
+      map.off('moveend', updateBounds);
+      map.off('zoomend', updateBounds);
+    };
   }, [map, setBounds, isMapLocked]);
   
   return null;
@@ -97,7 +102,7 @@ const MapClickHandler = ({ graph, waypoints, setWaypoints, setVisitedEdges, setF
 
 
 // Map flyTo logic when city changes - Enhanced to respect Shorts Mode padding
-const ChangeView = ({ center, isMapLocked, isShortsMode, city, waypoints }) => {
+const ChangeView = ({ center, isMapLocked, isShortsMode, city, waypoints, isRunning, isSuccessZooming }) => {
   const map = useMap();
   const lastFitRef = useRef(0);
   
@@ -140,6 +145,7 @@ const ChangeView = ({ center, isMapLocked, isShortsMode, city, waypoints }) => {
   }, [map, city, isShortsMode, waypoints]);
 
   useEffect(() => {
+    if (isRunning || isSuccessZooming || waypoints?.length > 2) return; // Don't fit to route overview while running, zooming out after success, or if custom waypoints exist
     if (!center) return;
     // Only auto-fit when the city changes or when requested (via resetting lastFitRef or similar)
     // We remove fitToRoute from dependencies to stop it from moving every time waypoints change
@@ -147,7 +153,7 @@ const ChangeView = ({ center, isMapLocked, isShortsMode, city, waypoints }) => {
     const delay = isShortsMode ? 250 : 0;
     const timer = setTimeout(fitToRoute, delay);
     return () => clearTimeout(timer);
-  }, [center, isShortsMode]); // Removed fitToRoute to prevent waypoint-triggered movement
+  }, [center, isShortsMode, isRunning, isSuccessZooming, waypoints]); // Removed fitToRoute to prevent waypoint-triggered movement
 
   useEffect(() => {
     if (isMapLocked) {
@@ -167,7 +173,7 @@ const ChangeView = ({ center, isMapLocked, isShortsMode, city, waypoints }) => {
 };
 
 // Component to automatically zoom into the current segment
-const SegmentCameraView = ({ isRunning, currentSegmentIdx, waypoints, isShortsMode, isAutoFollow }) => {
+const SegmentCameraView = ({ isRunning, currentSegmentIdx, waypoints, isShortsMode, isAutoFollow, setBounds }) => {
   const map = useMap();
   const lastSegmentRef = useRef(-1);
 
@@ -196,31 +202,45 @@ const SegmentCameraView = ({ isRunning, currentSegmentIdx, waypoints, isShortsMo
       hPadding = (viewportWidth - shortsWidth) / 2 + 30; 
     }
 
-    // Zoom and fix on this segment
+    // Zoom and fix on this segment with a reasonable maxZoom
     map.flyToBounds(bounds, { 
       paddingBottomRight: [hPadding, 150],
       paddingTopLeft: [hPadding, 80],
       duration: 1.5,
+      maxZoom: 16.5, // Slightly lower to avoid tile missing issues
       easeLinearity: 0.25
     });
 
-  }, [isRunning, currentSegmentIdx, waypoints, isShortsMode, isAutoFollow, map]);
+    // Proactively trigger road loading for the target area
+    const b = L.latLngBounds(bounds);
+    setTimeout(() => {
+      setBounds({
+        south: b.getSouth(),
+        west: b.getWest(),
+        north: b.getNorth(),
+        east: b.getEast()
+      });
+      map.invalidateSize(); // Fix rendering glitches
+    }, 100);
+
+  }, [isRunning, currentSegmentIdx, waypoints, isShortsMode, isAutoFollow, map, setBounds]);
 
   return null;
 };
 
 // Component to return to overview after search success
-const ResultOverviewHandler = ({ status, waypoints, isShortsMode }) => {
+const ResultOverviewHandler = ({ status, waypoints, isShortsMode, setIsSuccessZooming }) => {
   const map = useMap();
   const triggeredRef = useRef(false);
 
   useEffect(() => {
     if (status === 'success' && !triggeredRef.current && waypoints && waypoints.length >= 2) {
       triggeredRef.current = true;
+      setIsSuccessZooming(true); // Hide menu
+
       const timer = setTimeout(() => {
         const bounds = L.latLngBounds(waypoints.map(p => [p.lat, p.lng]));
         
-        // Match the padding logic used elsewhere
         let hPadding = 60;
         if (isShortsMode) {
           const viewportWidth = window.innerWidth;
@@ -235,15 +255,22 @@ const ResultOverviewHandler = ({ status, waypoints, isShortsMode }) => {
           duration: 2,
           easeLinearity: 0.25
         });
-      }, 2500); // Wait 2.5s after arrival before zooming out
+
+        // Show menu after zoom completes (duration 2s + extra buffer for review)
+        setTimeout(() => {
+          setIsSuccessZooming(false);
+        }, 4500);
+
+      }, 4000); // Wait 4s after arrival before zooming out
       
       return () => clearTimeout(timer);
     }
     
     if (status !== 'success') {
       triggeredRef.current = false;
+      setIsSuccessZooming(false);
     }
-  }, [status, waypoints, isShortsMode, map]);
+  }, [status, waypoints, isShortsMode, map, setIsSuccessZooming]);
 
   return null;
 };
@@ -251,6 +278,7 @@ const ResultOverviewHandler = ({ status, waypoints, isShortsMode }) => {
 const RealMapVisualizer = () => {
   const [cityKey, setCityKey] = useState('dc');
   const city = CITIES[cityKey];
+  const [isSuccessZooming, setIsSuccessZooming] = useState(false);
   const [bounds, setBounds] = useState(null);
   const [delayedStart, setDelayedStart] = useState(false);
   const [countdown, setCountdown] = useState(null);
@@ -604,7 +632,7 @@ const RealMapVisualizer = () => {
     if (isRecording && status === 'success') {
       const timer = setTimeout(() => {
         stopRecording();
-      }, 3500);
+      }, 12000); // 12s delay to capture successful overview recovery
       return () => clearTimeout(timer);
     }
   }, [isRecording, status, stopRecording]);
@@ -762,7 +790,7 @@ const RealMapVisualizer = () => {
       )}
 
       {/* Control Panel - Hidden during running/recording/countdown/preparing, visible in idle and success */}
-      {!recordMode && !isRunning && !countdown && !isRecording && !isPreparing && showMenu && (
+      {!recordMode && !isRunning && !countdown && !isRecording && !isPreparing && !isSuccessZooming && showMenu && (
       <div 
         className={`draggable-panel absolute z-[1001] bg-gray-900/95 p-3.5 rounded-xl text-white backdrop-blur-md border border-gray-700 w-[calc(100%-2rem)] max-w-[280px] max-h-[85vh] flex flex-col transition-all duration-300 shadow-2xl ${isDraggingMenu ? 'cursor-grabbing' : ''}`}
         style={menuPanelPos || (isShortsMode ? { 
@@ -1090,49 +1118,51 @@ const RealMapVisualizer = () => {
       {/* Stats Overlay - Always visible per user request */}
       {/* Stats Overlay - Always visible per user request */}
       <div 
-        className={`draggable-panel absolute top-3 z-[1000] bg-gray-900/95 p-3.5 rounded-xl text-white backdrop-blur-md border border-gray-700 w-[calc(100%-2rem)] max-w-[220px] transition-all duration-300 shadow-2xl ${isDraggingScore ? 'cursor-grabbing' : ''}`}
+        className={`draggable-panel absolute top-2.5 z-[1000] bg-gray-900/90 p-2 rounded-lg text-white backdrop-blur-md border border-gray-800 w-[calc(100%-2rem)] max-w-[170px] transition-all duration-300 shadow-2xl ${isDraggingScore ? 'cursor-grabbing' : ''}`}
         style={scorePanelPos || (isShortsMode ? { 
-          left: 'max(0.5rem, calc(50vw - (100vh * 9/16 / 2) + 12px))', 
+          left: 'max(0.4rem, calc(50vw - (100vh * 9/16 / 2) + 10px))', 
           transform: 'none' 
-        } : { left: '1rem' })}
+        } : { left: '0.75rem' })}
         onPointerMove={handleScorePointerMove}
         onPointerUp={handleScorePointerUp}
       >
         <div 
-          className="flex flex-col mb-2.5 cursor-grab active:cursor-grabbing select-none"
+          className="flex flex-col mb-1.5 cursor-grab active:cursor-grabbing select-none"
           onPointerDown={handleScorePointerDown}
         >
-          <h1 className="text-[9px] font-black tracking-[0.2em] text-cyan-400 leading-none mb-1">
-            {cityKey === 'gwanghwamun' ? 'BTS LIVE STAGE' : 'ELITE PATH PASS'}
+          <h1 className="text-[8px] font-black tracking-[0.1em] text-cyan-400 leading-none mb-1 opacity-80 uppercase">
+            {cityKey === 'gwanghwamun' ? 'BTS LIVE' : 'GPS SYSTEM'}
           </h1>
-          <div className="flex items-baseline gap-1.5">
-            <h2 className="text-sm font-black text-white">{city.name.split(' (')[0]}</h2>
-            <span className="text-[9px] font-mono text-yellow-400 bg-yellow-400/20 px-1 py-0.5 rounded border border-yellow-400/30">
-              {ALGORITHMS[algorithm].name.replace(' Search', '')}
+          <div className="flex items-baseline justify-between overflow-hidden">
+            <h2 className="text-[11px] font-black text-white truncate max-w-[110px]">
+              {cityKey === 'la' ? 'L.A.' : cityKey === 'dc' ? 'D.C.' : cityKey === 'ny' ? 'N.Y.' : city.name.split(' (')[0]}
+            </h2>
+            <span className="text-[8px] font-mono text-yellow-400 bg-yellow-400/10 px-1 py-0.5 rounded border border-yellow-400/20">
+              {algorithm.toUpperCase()}
             </span>
           </div>
         </div>
         
-        <div className="p-2.5 bg-gray-950/80 rounded-lg text-xs border border-gray-800 space-y-2 font-mono shadow-inner">
+        <div className="p-1.5 bg-gray-950/60 rounded border border-gray-800 space-y-1 font-mono shadow-inner">
           <div className="flex justify-between items-center">
-            <span className="text-gray-500 text-[10px] font-bold tracking-wider">EXP</span>
-            <span className="text-cyan-400 font-black text-base leading-none">{stats.edges}</span>
+            <span className="text-gray-500 text-[9px] font-bold">EXP</span>
+            <span className="text-cyan-400 font-black text-xs">{stats.edges}</span>
           </div>
-          <div className="flex justify-between items-center border-t border-gray-900 pt-1.5">
-            <span className="text-gray-500 text-[10px] font-bold tracking-wider">TIME</span>
-            <span className="text-green-400 font-bold text-sm leading-none">{((stats.time || 0) / 1000).toFixed(2)}s</span>
+          <div className="flex justify-between items-center border-t border-white/5 pt-1">
+            <span className="text-gray-500 text-[9px] font-bold">TIME</span>
+            <span className="text-green-400 font-bold text-xs">{((stats.time || 0) / 1000).toFixed(1)}s</span>
           </div>
-          <div className="flex justify-between items-center border-t border-gray-900 pt-1.5">
-            <span className="text-gray-500 text-[10px] font-bold tracking-wider">DIST</span>
-            <span className="text-orange-400 font-black text-base leading-none">{(stats.distance || 0).toFixed(0)}m</span>
+          <div className="flex justify-between items-center border-t border-white/5 pt-1">
+            <span className="text-gray-500 text-[9px] font-bold">DIST</span>
+            <span className="text-orange-400 font-black text-xs">{(stats.distance || 0).toFixed(0)}m</span>
           </div>
         </div>
         {status === 'success' && (
-          <div className="mt-3 text-green-400 text-sm font-black text-center tracking-[0.3em] bg-green-400/10 py-1.5 rounded-lg border border-green-400/20">
-            {cityKey === 'gwanghwamun' ? '✓ CONCERT READY' : '✓ MISSION COMPLETE'}
+          <div className="mt-1.5 text-green-400 text-[9px] font-black text-center tracking-widest bg-green-400/10 py-0.5 rounded border border-green-400/20">
+             FINISHED
           </div>
         )}
-        {status === 'running' && <p className="mt-3 text-cyan-400 text-xs font-black font-mono tracking-widest text-center animate-pulse">RUNNING SYSTEM{processingDots}</p>}
+        {status === 'running' && <p className="mt-1.5 text-cyan-400 text-[8px] font-black font-mono tracking-tighter text-center animate-pulse uppercase">Searching...</p>}
       </div>
 
       {/* Destination HUD Overlay - Draggable & High Contrast for Longform */}
@@ -1149,9 +1179,11 @@ const RealMapVisualizer = () => {
           onPointerUp={handleHudPointerUp}
         >
           <div className="bg-gray-900/95 backdrop-blur-xl border border-yellow-500/60 px-5 py-2.5 rounded-2xl flex items-center gap-4 shadow-[0_0_30px_rgba(234,179,8,0.3)] animate-fade-in-up hover:scale-105 transition-transform">
-            <div className="flex flex-col">
-              <span className="text-[9px] font-black text-yellow-500 tracking-[0.2em] uppercase leading-none mb-1">TARGET</span>
-              <span className="text-base font-black text-white tracking-widest uppercase italic leading-none">{currentDestName}</span>
+            <div className="flex flex-col min-w-0">
+              <span className="text-[8px] font-black text-yellow-500 tracking-[0.2em] uppercase leading-none mb-1">TARGET PATH</span>
+              <span className="text-[13px] font-black text-white tracking-widest uppercase italic leading-none truncate max-w-[200px]">
+                {currentDestName}
+              </span>
             </div>
             <div className="h-6 w-[2px] bg-yellow-500/30 rounded-full"></div>
             <div className="text-lg">🎯</div>
@@ -1172,14 +1204,16 @@ const RealMapVisualizer = () => {
         {!recordMode && !isRunning && !countdown && !isRecording && showMenu && (
           <ZoomControl position="topright" />
         )}
-        <ChangeView center={city.center} isMapLocked={isMapLocked} isShortsMode={isShortsMode} city={city} waypoints={waypoints} />
-        <SegmentCameraView isRunning={isRunning} currentSegmentIdx={currentSegmentIdx} waypoints={waypoints} isShortsMode={isShortsMode} isAutoFollow={isAutoFollow} />
-        <ResultOverviewHandler status={status} waypoints={waypoints} isShortsMode={isShortsMode} />
+        <ChangeView center={city.center} isMapLocked={isMapLocked} isShortsMode={isShortsMode} city={city} waypoints={waypoints} isRunning={isRunning} isSuccessZooming={isSuccessZooming} />
+        <SegmentCameraView isRunning={isRunning} currentSegmentIdx={currentSegmentIdx} waypoints={waypoints} isShortsMode={isShortsMode} isAutoFollow={isAutoFollow} setBounds={setBounds} />
+        <ResultOverviewHandler status={status} waypoints={waypoints} isShortsMode={isShortsMode} setIsSuccessZooming={setIsSuccessZooming} />
         <TileLayer
           attribution={mapStyle === 'satellite' ? 'Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community' : '&copy; <a href="https://carto.com/">CARTO</a>'}
           url={MAP_STYLES[mapStyle]}
         />
-        <RoadLoader setBounds={setBounds} isMapLocked={isMapLocked} />
+        {(status !== 'success' && !isSuccessZooming) && (
+          <RoadLoader setBounds={setBounds} isMapLocked={isMapLocked} />
+        )}
         <MapClickHandler
           graph={graph}
           waypoints={waypoints}
@@ -1218,25 +1252,26 @@ const RealMapVisualizer = () => {
           />
         )}
         
-        {/* Final path with Orange glow effect - Toned down */}
+        {/* Final path with Orange glow effect - High Visibility */}
         {finalPath.length > 0 && (
           <>
             <Polyline 
               positions={finalPath} 
               pathOptions={{
-                color: '#f97316',
-                weight: 8,
-                opacity: 0.3,
-                className: 'path-glow'
+                color: '#fb923c', // Lighter orange for better visibility
+                weight: 12,
+                opacity: 0.4,
+                className: 'path-glow',
+                pane: 'overlayPane'
               }}
             />
             <Polyline 
               positions={finalPath} 
               pathOptions={{
                 color: '#f97316',
-                weight: 4,
+                weight: 6,
                 opacity: 0.9,
-                className: 'path-glow'
+                pane: 'overlayPane'
               }}
             />
           </>

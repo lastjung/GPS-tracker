@@ -353,7 +353,9 @@ export const CITIES = {
       { lat: 34.0100, lng: -118.4960, name: "Santa Monica Pier START" },
       { lat: 34.0730, lng: -118.4740, name: "Getty Center View" },
       { lat: 34.0674, lng: -118.4010, name: "Beverly Hills (Rodeo Dr)" },
+      { lat: 34.0907, lng: -118.3846, name: "Sunset Strip (WeHo)" },
       { lat: 34.1016, lng: -118.3268, name: "Hollywood Walk of Fame" },
+      { lat: 34.0775, lng: -118.2585, name: "Echo Park (Sunset Blvd)" },
       { lat: 34.0739, lng: -118.2400, name: "Dodger Stadium" },
       { lat: 34.0562, lng: -118.2365, name: "Union Station END" }
     ],

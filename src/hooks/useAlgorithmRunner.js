@@ -33,6 +33,7 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
     setStats({ edges: 0, time: 0, distance: 0 });
     setStatus('idle');
     setCurrentPos(null);
+    setCurrentSegmentIdx(0);
   }, []);
 
   const stop = useCallback(() => {
@@ -68,6 +69,7 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
     setStats({ edges: 0, time: 0, distance: 0 });
     setFailedSegment(null);
     setCurrentPos(null);
+    setCurrentSegmentIdx(0);
     
     const algoFn = algoFns[algorithm];
     if (!algoFn) {
@@ -237,7 +239,9 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
       }
     };
     
-    step();
+    // START: Initial delay to let camera zoom into 1-2 segment (Start -> Way 1)
+    // Increased to 2.5s to ensure roads/tiles for the new area are loaded
+    animationRef.current = setTimeout(step, 2500);
   }, [start, end, graph, speed, algorithm, density, showVisualization, findNearestNode, haversine, stop]);
 
   return {
