@@ -1,15 +1,62 @@
 import { haversine } from '../utils/physics';
 
+// Fast Binary Heap for Priority Queue
+class PriorityQueue {
+  constructor(comparator = (a, b) => a[0] - b[0]) {
+    this.heap = [];
+    this.comparator = comparator;
+  }
+  push(val) {
+    this.heap.push(val);
+    this.siftUp();
+  }
+  pop() {
+    if (this.size() === 0) return null;
+    const top = this.heap[0];
+    const bottom = this.heap.pop();
+    if (this.size() > 0) {
+      this.heap[0] = bottom;
+      this.siftDown();
+    }
+    return top;
+  }
+  size() { return this.heap.length; }
+  siftUp() {
+    let node = this.size() - 1;
+    while (node > 0) {
+      const parent = (node - 1) >> 1;
+      if (this.comparator(this.heap[node], this.heap[parent]) < 0) {
+        [this.heap[node], this.heap[parent]] = [this.heap[parent], this.heap[node]];
+        node = parent;
+      } else break;
+    }
+  }
+  siftDown() {
+    let node = 0;
+    while (true) {
+      let smallest = node;
+      const left = (node << 1) + 1;
+      const right = (node << 1) + 2;
+      if (left < this.size() && this.comparator(this.heap[left], this.heap[smallest]) < 0) smallest = left;
+      if (right < this.size() && this.comparator(this.heap[right], this.heap[smallest]) < 0) smallest = right;
+      if (smallest !== node) {
+        [this.heap[node], this.heap[smallest]] = [this.heap[smallest], this.heap[node]];
+        node = smallest;
+      } else break;
+    }
+  }
+}
+
 export function* dijkstraOnGraph(nodes, edges, startId, endId) {
   const distances = { [startId]: 0 };
   const previous = {};
   const visited = new Set();
   const visitedEdges = [];
-  const pq = [[0, startId]];
+  const pq = new PriorityQueue();
+  pq.push([0, startId]);
   
-  while (pq.length > 0) {
-    pq.sort((a, b) => a[0] - b[0]);
-    const [dist, currentId] = pq.shift();
+  while (pq.size() > 0) {
+    const [dist, currentId] = pq.pop();
     if (visited.has(currentId)) continue;
     visited.add(currentId);
     
@@ -36,7 +83,13 @@ export function* dijkstraOnGraph(nodes, edges, startId, endId) {
         previous[neighborId] = currentId;
         pq.push([newDist, neighborId]);
         visitedEdges.push([[current.lat, current.lon], [neighbor.lat, neighbor.lon]]);
-        yield { type: 'visiting', visitedEdges: [...visitedEdges], currentDistance: newDist };
+        // Yield reference, not copy to avoid O(N^2). Include currentPos for auto-follow.
+        yield { 
+          type: 'visiting', 
+          visitedEdges, 
+          currentDistance: newDist, 
+          currentPos: [neighbor.lat, neighbor.lon] 
+        };
       }
     }
   }
@@ -46,17 +99,18 @@ export function* dijkstraOnGraph(nodes, edges, startId, endId) {
 export function* astarOnGraph(nodes, edges, startId, endId) {
   const heuristic = (id) => haversine(nodes[id].lat, nodes[id].lon, nodes[endId].lat, nodes[endId].lon);
   const gScore = { [startId]: 0 };
-  const fScore = { [startId]: heuristic(startId) };
+  const initialH = heuristic(startId);
+  const fScore = { [startId]: initialH };
   const previous = {};
   const visited = new Set();
   const visitedEdges = [];
-  const openSet = new Set([startId]);
+  const pq = new PriorityQueue();
+  pq.push([initialH, startId]);
 
-  while (openSet.size > 0) {
-    let currentId = null, minF = Infinity;
-    for (const id of openSet) {
-      if (fScore[id] < minF) { minF = fScore[id]; currentId = id; }
-    }
+  while (pq.size() > 0) {
+    const [f, currentId] = pq.pop();
+    
+    if (visited.has(currentId)) continue;
     
     if (currentId === endId) {
       const path = [];
@@ -66,7 +120,6 @@ export function* astarOnGraph(nodes, edges, startId, endId) {
       return;
     }
 
-    openSet.delete(currentId);
     visited.add(currentId);
 
     const neighbors = edges[currentId] || [];
@@ -82,14 +135,20 @@ export function* astarOnGraph(nodes, edges, startId, endId) {
         previous[neighborId] = currentId;
         gScore[neighborId] = tentativeG;
         
-        // Stable Exploratory A*: Low weight (0.8) for more organic spread
-        // Removed random noise to prevent chaos as requested.
-        const rawH = heuristic(neighborId);
-        fScore[neighborId] = tentativeG + (rawH * 0.8); 
+        // Standard A* (Weight 1.0) for fastest pathfinding
+        const h = heuristic(neighborId);
+        const fValue = tentativeG + h;
+        fScore[neighborId] = fValue;
         
-        openSet.add(neighborId);
+        pq.push([fValue, neighborId]);
         visitedEdges.push([[current.lat, current.lon], [neighbor.lat, neighbor.lon]]);
-        yield { type: 'visiting', visitedEdges: [...visitedEdges], currentDistance: tentativeG };
+        // Optimization: Yield reference instead of spreading. Include currentPos for auto-follow.
+        yield { 
+          type: 'visiting', 
+          visitedEdges, 
+          currentDistance: tentativeG,
+          currentPos: [neighbor.lat, neighbor.lon]
+        };
       }
     }
   }

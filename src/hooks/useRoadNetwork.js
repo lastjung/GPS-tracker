@@ -113,6 +113,10 @@ const fetchRoadNetwork = async (bounds, signal) => {
   else if (Math.abs(centerLat - 38.89) < RANGE && Math.abs(centerLon - (-77.03)) < RANGE) {
     localFile = 'dc.json';
   }
+  // Los Angeles approx: 34.05, -118.24
+  else if (Math.abs(centerLat - 34.05) < RANGE && Math.abs(centerLon - (-118.24)) < RANGE) {
+    localFile = 'la.json';
+  }
 
   if (localFile) {
     const response = await fetch(`${baseUrl}data/${localFile}`);

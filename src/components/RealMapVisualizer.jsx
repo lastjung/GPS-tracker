@@ -141,13 +141,13 @@ const ChangeView = ({ center, isMapLocked, isShortsMode, city, waypoints }) => {
 
   useEffect(() => {
     if (!center) return;
+    // Only auto-fit when the city changes or when requested (via resetting lastFitRef or similar)
+    // We remove fitToRoute from dependencies to stop it from moving every time waypoints change
     const now = Date.now();
-    if (now - lastFitRef.current < 600) return;
-    lastFitRef.current = now;
     const delay = isShortsMode ? 250 : 0;
     const timer = setTimeout(fitToRoute, delay);
     return () => clearTimeout(timer);
-  }, [center, isShortsMode, fitToRoute]);
+  }, [center, isShortsMode]); // Removed fitToRoute to prevent waypoint-triggered movement
 
   useEffect(() => {
     if (isMapLocked) {
@@ -162,6 +162,88 @@ const ChangeView = ({ center, isMapLocked, isShortsMode, city, waypoints }) => {
       map.scrollWheelZoom.enable();
     }
   }, [isMapLocked, map]);
+
+  return null;
+};
+
+// Component to automatically zoom into the current segment
+const SegmentCameraView = ({ isRunning, currentSegmentIdx, waypoints, isShortsMode, isAutoFollow }) => {
+  const map = useMap();
+  const lastSegmentRef = useRef(-1);
+
+  useEffect(() => {
+    if (!isAutoFollow || !isRunning || !waypoints || waypoints.length < 2) {
+      lastSegmentRef.current = -1;
+      return;
+    }
+
+    if (currentSegmentIdx === lastSegmentRef.current) return;
+    lastSegmentRef.current = currentSegmentIdx;
+
+    const start = waypoints[currentSegmentIdx];
+    const end = waypoints[currentSegmentIdx + 1];
+    if (!start || !end) return;
+
+    // Calculate bounds for this specific segment
+    const bounds = [[start.lat, start.lng], [end.lat, end.lng]];
+    
+    // Horizontal padding for Shorts Mode
+    let hPadding = 60;
+    if (isShortsMode) {
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const shortsWidth = viewportHeight * 9 / 16;
+      hPadding = (viewportWidth - shortsWidth) / 2 + 30; 
+    }
+
+    // Zoom and fix on this segment
+    map.flyToBounds(bounds, { 
+      paddingBottomRight: [hPadding, 150],
+      paddingTopLeft: [hPadding, 80],
+      duration: 1.5,
+      easeLinearity: 0.25
+    });
+
+  }, [isRunning, currentSegmentIdx, waypoints, isShortsMode, isAutoFollow, map]);
+
+  return null;
+};
+
+// Component to return to overview after search success
+const ResultOverviewHandler = ({ status, waypoints, isShortsMode }) => {
+  const map = useMap();
+  const triggeredRef = useRef(false);
+
+  useEffect(() => {
+    if (status === 'success' && !triggeredRef.current && waypoints && waypoints.length >= 2) {
+      triggeredRef.current = true;
+      const timer = setTimeout(() => {
+        const bounds = L.latLngBounds(waypoints.map(p => [p.lat, p.lng]));
+        
+        // Match the padding logic used elsewhere
+        let hPadding = 60;
+        if (isShortsMode) {
+          const viewportWidth = window.innerWidth;
+          const viewportHeight = window.innerHeight;
+          const shortsWidth = viewportHeight * 9 / 16;
+          hPadding = (viewportWidth - shortsWidth) / 2 + 50;
+        }
+
+        map.flyToBounds(bounds, {
+          paddingBottomRight: [hPadding, 100],
+          paddingTopLeft: [hPadding, 100],
+          duration: 2,
+          easeLinearity: 0.25
+        });
+      }, 2500); // Wait 2.5s after arrival before zooming out
+      
+      return () => clearTimeout(timer);
+    }
+    
+    if (status !== 'success') {
+      triggeredRef.current = false;
+    }
+  }, [status, waypoints, isShortsMode, map]);
 
   return null;
 };
@@ -182,6 +264,7 @@ const RealMapVisualizer = () => {
   const [isPreparing, setIsPreparing] = useState(false);
   const [isMenuCollapsed, setIsMenuCollapsed] = useState(false);
   const [mapStyle, setMapStyle] = useState('street');
+  const [isAutoFollow, setIsAutoFollow] = useState(false);
 
   const MAP_STYLES = {
     dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
@@ -225,6 +308,8 @@ const RealMapVisualizer = () => {
     isTurboMode,
     setIsTurboMode,
     failedSegment,
+    currentPos,
+    currentSegmentIdx,
     run: runAlgorithmCore,
     stop: stopAlgorithm,
     reset: resetAlgorithm
@@ -264,6 +349,18 @@ const RealMapVisualizer = () => {
       setStatus('idle');
     }
   }, [networkError, status, setStatus]);
+
+  // Global ESC key listener to abort algorithm
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isRunning) {
+        stopAlgorithm();
+        setStatus('idle');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isRunning, stopAlgorithm, setStatus]);
   
   // Drag state for Menu Panel
   const [menuPanelPos, setMenuPanelPos] = useState(null);
@@ -394,8 +491,8 @@ const RealMapVisualizer = () => {
   const handleStart = useCallback(() => {
     if (waypoints.length < 2 || Object.keys(graph.nodes).length === 0) return;
     
-    // If delayed start (for recording)
-    if (delayedStart && countdown === null) {
+    // Start immediately unless in Record Mode
+    if (recordMode && countdown === null) {
       setCountdown(3);
       return;
     }
@@ -667,7 +764,7 @@ const RealMapVisualizer = () => {
       {/* Control Panel - Hidden during running/recording/countdown/preparing, visible in idle and success */}
       {!recordMode && !isRunning && !countdown && !isRecording && !isPreparing && showMenu && (
       <div 
-        className={`draggable-panel absolute z-[1001] bg-gray-900/95 p-5 rounded-xl text-white backdrop-blur-md border border-gray-700 w-[calc(100%-2rem)] max-w-[340px] max-h-[90vh] flex flex-col transition-all duration-300 shadow-2xl ${isDraggingMenu ? 'cursor-grabbing' : ''}`}
+        className={`draggable-panel absolute z-[1001] bg-gray-900/95 p-3.5 rounded-xl text-white backdrop-blur-md border border-gray-700 w-[calc(100%-2rem)] max-w-[280px] max-h-[85vh] flex flex-col transition-all duration-300 shadow-2xl ${isDraggingMenu ? 'cursor-grabbing' : ''}`}
         style={menuPanelPos || (isShortsMode ? { 
           bottom: 'max(0.5rem, calc(50vh - (100vh * 9/16 / 2) + 8px))', 
           right: 'max(0.5rem, calc(50vw - (100vh * 9/16 / 2) + 8px))', 
@@ -680,17 +777,17 @@ const RealMapVisualizer = () => {
         onPointerMove={handleMenuPointerMove}
         onPointerUp={handleMenuPointerUp}
       >
-        <div className="flex justify-between items-center mb-1.5 border-b border-cyan-500/30 pb-1">
+        <div className="flex justify-between items-center mb-1 border-b border-cyan-500/30 pb-1">
           <div 
             className="flex flex-col cursor-grab active:cursor-grabbing select-none"
             onPointerDown={handleMenuPointerDown}
           >
-            <h1 className="text-[11px] font-black tracking-[0.2em] text-cyan-400 leading-none mb-1.5">
+            <h1 className="text-[10px] font-black tracking-[0.2em] text-cyan-400 leading-none mb-1">
               {cityKey === 'gwanghwamun' ? 'BTS LIVE STAGE' : 'ELITE PATH PASS'}
             </h1>
             <div className="flex items-baseline gap-2">
-              <h2 className="text-lg font-black text-white">{city.name}</h2>
-              <span className="text-[11px] font-mono text-yellow-400 bg-yellow-400/20 px-2 py-0.5 rounded border border-yellow-400/30">
+              <h2 className="text-base font-black text-white">{city.name}</h2>
+              <span className="text-[10px] font-mono text-yellow-400 bg-yellow-400/20 px-1.5 py-0.5 rounded border border-yellow-400/30">
                 {ALGORITHMS[algorithm].name.replace(' Search', '')}
               </span>
             </div>
@@ -708,12 +805,12 @@ const RealMapVisualizer = () => {
         {!isRunning && !countdown && !isMenuCollapsed && (
           <div className="overflow-y-auto pr-1 custom-scrollbar">
             {/* City Selector */}
-            <div className="flex flex-col gap-1 mb-2">
+            <div className="flex flex-col gap-1 mb-1.5">
               <select
                 value={cityKey}
                 onChange={(e) => handleCityChange(e.target.value)}
                 disabled={isRunning}
-                className="bg-gray-800 text-white px-3 py-2.5 rounded-lg w-full border border-gray-700 focus:border-cyan-500 outline-none text-sm font-medium shadow-inner"
+                className="bg-gray-800 text-white px-2 py-2 rounded-lg w-full border border-gray-700 focus:border-cyan-500 outline-none text-xs font-medium shadow-inner"
               >
                 {Object.entries(CITIES).map(([key, c]) => (
                   <option key={key} value={key}>{c.name}</option>
@@ -722,7 +819,7 @@ const RealMapVisualizer = () => {
             </div>
             
             {/* Coordinates Display - Multi-waypoint aware */}
-            <div className="flex flex-col gap-1.5 mb-4 bg-gray-950/60 p-3 rounded-lg border border-gray-800 font-mono text-[11px] max-h-40 overflow-y-auto custom-scrollbar shadow-inner">
+            <div className="flex flex-col gap-1 mb-3 bg-gray-950/60 p-2.5 rounded-lg border border-gray-800 font-mono text-[10px] max-h-32 overflow-y-auto custom-scrollbar shadow-inner">
               {waypoints.map((pt, idx) => (
                 <div 
                   key={idx} 
@@ -765,13 +862,13 @@ const RealMapVisualizer = () => {
             </div>
 
             {/* Algorithm Selector */}
-            <div className="flex flex-col gap-1.5 mb-4">
-              <label className="text-[11px] font-bold text-gray-400 tracking-wider">ALGORITHM</label>
+            <div className="flex flex-col gap-1.5 mb-3">
+              <label className="text-[10px] font-bold text-gray-400 tracking-wider uppercase">Algorithm</label>
               <select
                 value={algorithm}
                 onChange={(e) => setAlgorithm(e.target.value)}
                 disabled={isRunning}
-                className="bg-gray-800 text-white px-3 py-2.5 rounded-lg w-full border border-gray-700 outline-none text-sm font-medium"
+                className="bg-gray-800 text-white px-2 py-2 rounded-lg w-full border border-gray-700 outline-none text-xs font-medium"
               >
                 {Object.entries(ALGORITHMS).map(([key, { name }]) => (
                   <option key={key} value={key}>{name}</option>
@@ -780,20 +877,20 @@ const RealMapVisualizer = () => {
             </div>
             
             {/* Sliders Group (Speed & Density) */}
-            <div className="flex flex-col gap-3 mb-4 bg-gray-900/40 p-3 rounded-lg border border-gray-800">
-              <div className="flex flex-col gap-2">
-                <label className="text-[11px] font-bold text-gray-400 flex justify-between tracking-wider">
+            <div className="flex flex-col gap-2.5 mb-3 bg-gray-900/40 p-2.5 rounded-lg border border-gray-800">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold text-gray-400 flex justify-between tracking-wider">
                   <span>STEP SPEED</span>
                   <span className="text-cyan-400 font-mono bg-cyan-400/10 px-1.5 rounded">{speed}</span>
                 </label>
                 <input
                   type="range" min="1" max="50" value={speed}
                   onChange={(e) => setSpeed(Number(e.target.value))}
-                  className="w-full accent-cyan-500 h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer"
+                  className="w-full accent-cyan-500 h-1 bg-gray-800 rounded-lg appearance-none cursor-pointer"
                 />
               </div>
-              <div className="flex flex-col gap-2">
-                <label className="text-[11px] font-bold text-gray-400 flex justify-between tracking-wider">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold text-gray-400 flex justify-between tracking-wider">
                   <span>DENSITY</span>
                   <span className="text-cyan-400 font-mono bg-cyan-400/10 px-1.5 rounded">1/{density}</span>
                 </label>
@@ -801,56 +898,64 @@ const RealMapVisualizer = () => {
                   type="range" min="1" max="10" value={density}
                   onChange={(e) => setDensity(Number(e.target.value))}
                   disabled={isRunning}
-                  className="w-full h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                  className="w-full h-1 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-cyan-500"
                 />
               </div>
             </div>
 
             {/* Visualization & View Controls */}
-            <div className="grid grid-cols-2 gap-2 mb-4 bg-gray-900/60 p-3 rounded-lg border border-gray-800">
-              <div className="flex items-center gap-2">
+            <div className="grid grid-cols-2 gap-2 mb-3 bg-gray-900/60 p-2.5 rounded-lg border border-gray-800">
+              <div className="flex items-center gap-1.5">
                 <input 
                   type="checkbox" id="vizToggle" checked={showVisualization} 
                   onChange={(e) => setShowVisualization(e.target.checked)}
-                  disabled={isRunning} className="w-4 h-4 rounded accent-cyan-500"
+                  disabled={isRunning} className="w-3.5 h-3.5 rounded accent-cyan-500"
                 />
-                <label htmlFor="vizToggle" className="text-[11px] font-medium text-gray-300 cursor-pointer">Show Steps</label>
+                <label htmlFor="vizToggle" className="text-[10px] font-medium text-gray-300 cursor-pointer">Steps</label>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <input 
                   type="checkbox" id="lockToggle" checked={isMapLocked} 
                   onChange={(e) => setIsMapLocked(e.target.checked)}
-                  className="w-4 h-4 rounded accent-orange-500"
+                  className="w-3.5 h-3.5 rounded accent-orange-500"
                 />
-                <label htmlFor="lockToggle" className="text-[11px] text-orange-400 font-bold cursor-pointer">Lock Map</label>
+                <label htmlFor="lockToggle" className="text-[10px] text-orange-400 font-bold cursor-pointer">Lock</label>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <input 
                   type="checkbox" id="shortsToggle" checked={isShortsMode} 
                   onChange={(e) => setIsShortsMode(e.target.checked)}
-                  className="w-4 h-4 rounded accent-purple-500"
+                  className="w-3.5 h-3.5 rounded accent-purple-500"
                 />
-                <label htmlFor="shortsToggle" className="text-[11px] text-purple-400 font-bold cursor-pointer">9:16 Shorts</label>
+                <label htmlFor="shortsToggle" className="text-[10px] text-purple-400 font-bold cursor-pointer">Shorts</label>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <input 
                   type="checkbox" id="turboToggle" checked={isTurboMode} 
                   onChange={(e) => setIsTurboMode(e.target.checked)}
-                  className="w-4 h-4 rounded accent-yellow-500"
+                  className="w-3.5 h-3.5 rounded accent-yellow-500"
                 />
-                <label htmlFor="turboToggle" className="text-[11px] text-yellow-500 font-black cursor-pointer italic">TURBO</label>
+                <label htmlFor="turboToggle" className="text-[10px] text-yellow-500 font-black cursor-pointer italic">TURBO</label>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <input 
+                  type="checkbox" id="autoFollowToggle" checked={isAutoFollow} 
+                  onChange={(e) => setIsAutoFollow(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded accent-cyan-400"
+                />
+                <label htmlFor="autoFollowToggle" className="text-[10px] text-cyan-400 font-bold cursor-pointer">CAM</label>
               </div>
             </div>
             
             {/* Map Style Selector */}
-            <div className="flex flex-col gap-1.5 mb-4">
-              <label className="text-[11px] font-bold text-gray-400 tracking-wider">MAP STYLE</label>
-              <div className="grid grid-cols-2 gap-2">
+            <div className="flex flex-col gap-1 mb-1">
+              <label className="text-[10px] font-bold text-gray-400 tracking-wider">MAP STYLE</label>
+              <div className="grid grid-cols-2 gap-1.5">
                 {Object.keys(MAP_STYLES).map((style) => (
                   <button
                     key={style}
                     onClick={() => setMapStyle(style)}
-                    className={`text-[10px] py-1.5 rounded-md font-bold transition-all border ${
+                    className={`text-[9px] py-1 rounded-md font-bold transition-all border ${
                       mapStyle === style 
                         ? 'bg-cyan-600 border-cyan-400 shadow-lg' 
                         : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'
@@ -866,57 +971,45 @@ const RealMapVisualizer = () => {
 
         {/* Current Algorithm Name & Description - Always visible status when not collapsed */}
         {!isMenuCollapsed && (
-          <div className="mb-4 p-3 bg-gray-950/80 rounded-xl border border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.2)]">
-            <div className="text-lg font-black text-yellow-400 flex justify-between items-center tracking-tight">
+          <div className="mb-3 p-2.5 bg-gray-950/80 rounded-xl border border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.2)]">
+            <div className="text-base font-black text-yellow-400 flex justify-between items-center tracking-tight leading-tight">
               {ALGORITHMS[algorithm].name}
             </div>
-            {!isRunning && <div className="text-[11px] text-gray-400 mt-1.5 leading-relaxed font-medium">{ALGORITHMS[algorithm].description}</div>}
+            {!isRunning && <div className="text-[10px] text-gray-400 mt-1 leading-tight font-medium">{ALGORITHMS[algorithm].description}</div>}
           </div>
         )}
         
         {/* Grouped Action Area - Hidden when collapsed */}
         {!isRunning && !countdown && !isMenuCollapsed && (
-          <div className="flex flex-col gap-3 p-3 bg-gray-950/40 rounded-xl border border-gray-800 shadow-inner">
-            <div className="flex gap-2 items-stretch flex-wrap">
+          <div className="flex flex-col gap-2 p-2.5 bg-gray-950/40 rounded-xl border border-gray-800 shadow-inner">
+            <div className="flex gap-1.5 items-stretch flex-wrap">
               <button
                 onClick={handleStart}
                 disabled={waypoints.length < 2 || isLoading || countdown !== null}
-                className={`h-10 rounded-lg px-6 font-black flex-1 text-sm tracking-widest text-white transition-all duration-300 transform active:scale-95 shadow-xl ${
+                className={`h-9 rounded-lg px-4 font-black flex-1 text-xs tracking-widest text-white transition-all duration-300 transform active:scale-95 shadow-xl ${
                   waypoints.length < 2 || isLoading || graph.ways.length === 0
                     ? 'bg-gray-800 text-gray-600 cursor-not-allowed border border-gray-700' 
                     : 'bg-gradient-to-br from-emerald-400 to-teal-600 hover:from-emerald-300 hover:to-teal-500 ring-2 ring-emerald-500/20'
                 }`}
               >
-                {waypoints.length < 2 ? 'SELECT POINTS' : (isLoading || graph.ways.length === 0 ? 'PLEASE WAIT' : 'START JOURNEY')}
+                {waypoints.length < 2 ? 'SELECT POINTS' : (isLoading || graph.ways.length === 0 ? 'WAIT' : 'START')}
               </button>
               
               <button
                 onClick={() => setWaypoints([])}
-                className="px-3 h-10 bg-red-950/40 hover:bg-red-900/60 text-red-400/80 rounded-lg shadow-md font-bold text-xs transition-all border border-red-900/30 active:scale-95"
-                title="Clear all"
-              >Clear</button>
+                className="px-2 h-9 bg-red-950/40 hover:bg-red-900/60 text-red-400/80 rounded-lg shadow-md font-bold text-[10px] transition-all border border-red-900/30 active:scale-95"
+              >CLR</button>
               
               <button
                 onClick={resetAll}
-                className="px-2 h-7 bg-gray-700/50 hover:bg-gray-600 text-gray-300 rounded shadow-md font-bold text-[10px] transition-all border border-gray-600/50 active:scale-95"
-              >Reset</button>
-
-              {isShortsMode && waypoints.length >= 2 && (
-                <button
-                  onClick={() => {
-                    setIsShortsMode(false);
-                    setTimeout(() => setIsShortsMode(true), 10);
-                  }}
-                  title="Fit 9:16"
-                  className="px-2.5 h-7 bg-indigo-600/80 hover:bg-indigo-500 text-white rounded shadow-lg transition-all active:scale-95 text-[10px]"
-                >🎯</button>
-              )}
+                className="px-2 h-9 bg-gray-700/50 hover:bg-gray-600 text-gray-300 rounded-lg shadow-md font-bold text-[10px] transition-all border border-gray-600/50 active:scale-95"
+              >RST</button>
             </div>
 
             <button
               onClick={isRecording ? stopRecording : startRecording}
               disabled={(isRunning || isLoading || countdown !== null) && !isRecording}
-              className={`w-full h-7 text-[10px] font-black rounded transition-all shadow-xl active:scale-[0.98] ${
+              className={`w-full h-7 text-[9px] font-black rounded transition-all shadow-xl active:scale-[0.98] ${
                 countdown !== null ? 'bg-amber-500' : isRecording ? 'bg-red-500 animate-pulse' : 'bg-gradient-to-r from-fuchsia-600 to-purple-700 hover:from-fuchsia-500 hover:to-purple-600 shadow-purple-900/30'
               } text-white disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed`}
             >
@@ -997,41 +1090,41 @@ const RealMapVisualizer = () => {
       {/* Stats Overlay - Always visible per user request */}
       {/* Stats Overlay - Always visible per user request */}
       <div 
-        className={`draggable-panel absolute top-4 z-[1000] bg-gray-900/95 p-5 rounded-2xl text-white backdrop-blur-md border border-gray-700 w-[calc(100%-2rem)] max-w-[280px] transition-all duration-300 shadow-2xl ${isDraggingScore ? 'cursor-grabbing' : ''}`}
+        className={`draggable-panel absolute top-3 z-[1000] bg-gray-900/95 p-3.5 rounded-xl text-white backdrop-blur-md border border-gray-700 w-[calc(100%-2rem)] max-w-[220px] transition-all duration-300 shadow-2xl ${isDraggingScore ? 'cursor-grabbing' : ''}`}
         style={scorePanelPos || (isShortsMode ? { 
           left: 'max(0.5rem, calc(50vw - (100vh * 9/16 / 2) + 12px))', 
           transform: 'none' 
-        } : { left: '1.5rem' })}
+        } : { left: '1rem' })}
         onPointerMove={handleScorePointerMove}
         onPointerUp={handleScorePointerUp}
       >
         <div 
-          className="flex flex-col mb-4 cursor-grab active:cursor-grabbing select-none"
+          className="flex flex-col mb-2.5 cursor-grab active:cursor-grabbing select-none"
           onPointerDown={handleScorePointerDown}
         >
-          <h1 className="text-[11px] font-black tracking-[0.2em] text-cyan-400 leading-none mb-1.5">
+          <h1 className="text-[9px] font-black tracking-[0.2em] text-cyan-400 leading-none mb-1">
             {cityKey === 'gwanghwamun' ? 'BTS LIVE STAGE' : 'ELITE PATH PASS'}
           </h1>
-          <div className="flex items-baseline gap-2">
-            <h2 className="text-lg font-black text-white">{city.name.split(' (')[0]}</h2>
-            <span className="text-[11px] font-mono text-yellow-400 bg-yellow-400/20 px-2 py-0.5 rounded border border-yellow-400/30">
+          <div className="flex items-baseline gap-1.5">
+            <h2 className="text-sm font-black text-white">{city.name.split(' (')[0]}</h2>
+            <span className="text-[9px] font-mono text-yellow-400 bg-yellow-400/20 px-1 py-0.5 rounded border border-yellow-400/30">
               {ALGORITHMS[algorithm].name.replace(' Search', '')}
             </span>
           </div>
         </div>
         
-        <div className="p-3.5 bg-gray-950/80 rounded-xl text-sm border border-gray-800 space-y-2.5 font-mono shadow-inner">
+        <div className="p-2.5 bg-gray-950/80 rounded-lg text-xs border border-gray-800 space-y-2 font-mono shadow-inner">
           <div className="flex justify-between items-center">
-            <span className="text-gray-500 text-[11px] font-bold tracking-wider">EXPLORED</span>
-            <span className="text-cyan-400 font-black text-lg leading-none">{stats.edges}</span>
+            <span className="text-gray-500 text-[10px] font-bold tracking-wider">EXP</span>
+            <span className="text-cyan-400 font-black text-base leading-none">{stats.edges}</span>
           </div>
-          <div className="flex justify-between items-center border-t border-gray-900 pt-2">
-            <span className="text-gray-500 text-[11px] font-bold tracking-wider">TIME</span>
-            <span className="text-green-400 font-bold text-base leading-none">{((stats.time || 0) / 1000).toFixed(2)}s</span>
+          <div className="flex justify-between items-center border-t border-gray-900 pt-1.5">
+            <span className="text-gray-500 text-[10px] font-bold tracking-wider">TIME</span>
+            <span className="text-green-400 font-bold text-sm leading-none">{((stats.time || 0) / 1000).toFixed(2)}s</span>
           </div>
-          <div className="flex justify-between items-center border-t border-gray-900 pt-2">
-            <span className="text-gray-500 text-[11px] font-bold tracking-wider">DISTANCE</span>
-            <span className="text-orange-400 font-black text-lg leading-none">{(stats.distance || 0).toFixed(0)}m</span>
+          <div className="flex justify-between items-center border-t border-gray-900 pt-1.5">
+            <span className="text-gray-500 text-[10px] font-bold tracking-wider">DIST</span>
+            <span className="text-orange-400 font-black text-base leading-none">{(stats.distance || 0).toFixed(0)}m</span>
           </div>
         </div>
         {status === 'success' && (
@@ -1049,19 +1142,19 @@ const RealMapVisualizer = () => {
           style={hudPanelPos || { 
             top: '50%', 
             left: '50%', 
-            transform: 'translate(-50%, 140px)' 
+            transform: 'translate(-50%, 120px)' 
           }}
           onPointerDown={handleHudPointerDown}
           onPointerMove={handleHudPointerMove}
           onPointerUp={handleHudPointerUp}
         >
-          <div className="bg-gray-900/95 backdrop-blur-xl border-2 border-yellow-500/80 px-8 py-4 rounded-3xl flex items-center gap-6 shadow-[0_0_50px_rgba(234,179,8,0.4)] animate-fade-in-up hover:scale-105 transition-transform">
+          <div className="bg-gray-900/95 backdrop-blur-xl border border-yellow-500/60 px-5 py-2.5 rounded-2xl flex items-center gap-4 shadow-[0_0_30px_rgba(234,179,8,0.3)] animate-fade-in-up hover:scale-105 transition-transform">
             <div className="flex flex-col">
-              <span className="text-[11px] font-black text-yellow-500 tracking-[0.3em] uppercase leading-none mb-2">TARGET DESTINATION</span>
-              <span className="text-xl font-black text-white tracking-widest drop-shadow-md uppercase italic">{currentDestName}</span>
+              <span className="text-[9px] font-black text-yellow-500 tracking-[0.2em] uppercase leading-none mb-1">TARGET</span>
+              <span className="text-base font-black text-white tracking-widest uppercase italic leading-none">{currentDestName}</span>
             </div>
-            <div className="h-10 w-[3px] bg-yellow-500/40 rounded-full shadow-[0_0_10px_rgba(234,179,8,0.5)]"></div>
-            <div className="text-xl">🎯</div>
+            <div className="h-6 w-[2px] bg-yellow-500/30 rounded-full"></div>
+            <div className="text-lg">🎯</div>
           </div>
         </div>
       )}
@@ -1080,6 +1173,8 @@ const RealMapVisualizer = () => {
           <ZoomControl position="topright" />
         )}
         <ChangeView center={city.center} isMapLocked={isMapLocked} isShortsMode={isShortsMode} city={city} waypoints={waypoints} />
+        <SegmentCameraView isRunning={isRunning} currentSegmentIdx={currentSegmentIdx} waypoints={waypoints} isShortsMode={isShortsMode} isAutoFollow={isAutoFollow} />
+        <ResultOverviewHandler status={status} waypoints={waypoints} isShortsMode={isShortsMode} />
         <TileLayer
           attribution={mapStyle === 'satellite' ? 'Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community' : '&copy; <a href="https://carto.com/">CARTO</a>'}
           url={MAP_STYLES[mapStyle]}

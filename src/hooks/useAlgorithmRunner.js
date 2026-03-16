@@ -12,7 +12,9 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
   const [finalPath, setFinalPath] = useState([]);
   const [processingDots, setProcessingDots] = useState('');
   const [currentDestName, setCurrentDestName] = useState(null);
+  const [currentSegmentIdx, setCurrentSegmentIdx] = useState(0);
   const [failedSegment, setFailedSegment] = useState(null);
+  const [currentPos, setCurrentPos] = useState(null);
   
   // UI Control states
   const [speed, setSpeed] = useState(15);
@@ -30,6 +32,7 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
     setFinalPath([]);
     setStats({ edges: 0, time: 0, distance: 0 });
     setStatus('idle');
+    setCurrentPos(null);
   }, []);
 
   const stop = useCallback(() => {
@@ -64,6 +67,7 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
     setFinalPath([]);
     setStats({ edges: 0, time: 0, distance: 0 });
     setFailedSegment(null);
+    setCurrentPos(null);
     
     const algoFn = algoFns[algorithm];
     if (!algoFn) {
@@ -143,11 +147,9 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
     const step = () => {
       let iterations = 0;
       let lastValue = null;
-      let baseSteps = speed <= 2 ? 1 : speed <= 5 ? 3 : speed <= 10 ? 15 : speed <= 25 ? 50 : 120;
-      
-      // Turbo Mode: Scale iteration count by the number of visited edges to prevent late-stage lag
-      const turboFactor = isTurboMode ? Math.max(1, Math.floor((accumulatedVisited.length + 1000) / 1000)) : 1;
-      const stepsPerTick = baseSteps * turboFactor;
+      let baseSteps = speed <= 2 ? 1 : speed <= 5 ? 3 : speed <= 10 ? 15 : speed <= 25 ? 60 : 150;
+      // Balanced Turbo Mode: Fast enough for LA but still visually trackable
+      const stepsPerTick = isTurboMode ? baseSteps * 8 : baseSteps;
       
       while (iterations < stepsPerTick) {
         const { value, done } = gen.next();
@@ -180,7 +182,13 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
         });
         
         if (currentEdges.length % 50 === 0) playSearchTick();
-        const delay = speed <= 10 ? (11 - speed) * 15 : Math.max(1, 41 - speed); 
+        
+        if (lastValue.currentPos) {
+          setCurrentPos(lastValue.currentPos);
+        }
+        
+        // Smoother delay calculation
+        const delay = isTurboMode ? 1 : speed <= 10 ? (11 - speed) * 15 : Math.max(1, 41 - speed); 
         animationRef.current = setTimeout(step, delay);
 
       } else if (lastValue.type === 'found') {
@@ -190,6 +198,7 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
         accumulatedVisited = [...accumulatedVisited, ...lastValue.visitedEdges]; // Lock in this segment's edges
         
         currentSegment++;
+        setCurrentSegmentIdx(currentSegment);
         
         if (currentSegment < segmentCount) {
            // Prepare next segment
@@ -202,7 +211,8 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
            // Maintain all previous visited edges during pause
            setVisitedEdges(accumulatedVisited); 
            
-           animationRef.current = setTimeout(step, 200);
+           // Sync with camera: Wait for 1.5s transition before starting next segment search
+           animationRef.current = setTimeout(step, 1500);
         } else {
            // All done
            stop();
@@ -234,7 +244,7 @@ export const useAlgorithmRunner = (graph, start, end, options) => {
     isRunning, status, setStatus, stats, setStats, visitedEdges, setVisitedEdges, finalPath, setFinalPath, processingDots, setProcessingDots,
     currentDestName, setCurrentDestName,
     speed, setSpeed, algorithm, setAlgorithm, density, setDensity, showVisualization, setShowVisualization, isTurboMode, setIsTurboMode,
-    failedSegment,
+    failedSegment, currentPos, currentSegmentIdx,
     run, stop, reset
   };
 };
