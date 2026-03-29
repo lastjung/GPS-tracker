@@ -176,12 +176,22 @@ const ChangeView = ({ center, isMapLocked, isShortsMode, city, waypoints, isRunn
 const SegmentCameraView = ({ isRunning, currentSegmentIdx, waypoints, isShortsMode, isAutoFollow, setBounds }) => {
   const map = useMap();
   const lastSegmentRef = useRef(-1);
+  const startTimeRef = useRef(null);
+
+  // Track start time for the cinematic 2s delay
+  useEffect(() => {
+    if (isRunning) startTimeRef.current = Date.now();
+    else startTimeRef.current = null;
+  }, [isRunning]);
 
   useEffect(() => {
     if (!isAutoFollow || !isRunning || !waypoints || waypoints.length < 2) {
       lastSegmentRef.current = -1;
       return;
     }
+
+    // CINEMATIC DELAY: Wait 2 seconds before starting auto-follow zoom
+    if (startTimeRef.current && (Date.now() - startTimeRef.current < 2000)) return;
 
     if (currentSegmentIdx === lastSegmentRef.current) return;
     lastSegmentRef.current = currentSegmentIdx;
@@ -289,6 +299,17 @@ const RealMapVisualizer = () => {
   const [displayMode, setDisplayMode] = useState('Visualize');
   const [isMapLocked, setIsMapLocked] = useState(false);
   const [isShortsMode, setIsShortsMode] = useState(false);
+  
+  // ESC key handler for exit
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setIsShortsMode(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
   const [isPreparing, setIsPreparing] = useState(false);
   const [isMenuCollapsed, setIsMenuCollapsed] = useState(false);
   const [mapStyle, setMapStyle] = useState('street');
@@ -553,48 +574,39 @@ const RealMapVisualizer = () => {
   useEffect(() => {
     if (countdown === 0) {
       setCountdown(null);
+      setIsPreparing(false); 
+      
+      // IMMEDIATE START: Prioritize calculation to eliminate any visual lag
+      runAlgorithmCore(algoFns, waypoints);
+
       if (pendingStreamRef.current) {
         setIsRecording(true);
         const stream = pendingStreamRef.current;
         
         // Robust mimeType selection for Mac/Windows compatibility
-        const mimeTypes = [
-          'video/webm;codecs=vp9',
-          'video/webm;codecs=vp8',
-          'video/webm',
-          'video/mp4' // For Safari mostly
-        ];
-        
+        const mimeTypes = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
         const selectedMime = mimeTypes.find(type => MediaRecorder.isTypeSupported(type)) || '';
         
-        if (!selectedMime) {
-          alert('Screen recording is not supported in this browser.');
-          return;
+        if (selectedMime) {
+          const recorder = new MediaRecorder(stream, {
+            mimeType: selectedMime,
+            videoBitsPerSecond: 5000000 
+          });
+          mediaRecorderRef.current = recorder;
+          
+          recorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) recordedChunksRef.current.push(e.data);
+          };
+          
+          recorder.onstop = () => {
+            stream.getTracks().forEach(track => track.stop());
+            onStopCallback();
+          };
+
+          recorder.start(100); 
         }
-
-        const recorder = new MediaRecorder(stream, {
-          mimeType: selectedMime,
-          videoBitsPerSecond: 5000000 // 5Mbps
-        });
-        mediaRecorderRef.current = recorder;
-        
-        recorder.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0) {
-            recordedChunksRef.current.push(e.data);
-          }
-        };
-        
-        recorder.onstop = () => {
-          stream.getTracks().forEach(track => track.stop());
-          onStopCallback();
-        };
-
-        recorder.start(100); // Collect data every 100ms
-        setTimeout(() => setIsPreparing(false), 200);
-      } else {
-        setIsPreparing(false);
       }
-      runAlgorithmCore(algoFns, waypoints);
+      
     } else if (countdown !== null && countdown > 0) {
       playBeep(880 + (3 - countdown) * 220);
       const timer = setTimeout(() => setCountdown(countdown - 1), 1000);

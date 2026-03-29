@@ -1,9 +1,25 @@
 export const CITIES = {
   toronto: {
-    name: "Toronto",
-    center: [43.66, -79.365],
-    start: { lat: 43.685, lng: -79.34, name: "Danforth Ave" },
-    end: { lat: 43.6426, lng: -79.3871, name: "Union Station" },
+    name: "Toronto (City Labyrinth Tour)",
+    center: [43.66, -79.38],
+    waypoints: [
+      { lat: 43.685, lng: -79.34, name: "Danforth Ave START" },
+      { lat: 43.6683, lng: -79.3541, name: "Riverdale Park East" },
+      { lat: 43.666, lng: -79.366, name: "Cabbagetown Alleys" },
+      { lat: 43.6503, lng: -79.3596, name: "Distillery District" },
+      { lat: 43.6487, lng: -79.3715, name: "St. Lawrence Market" },
+      { lat: 43.6455, lng: -79.3807, name: "Union Station (Front St)" },
+      { lat: 43.642, lng: -79.388, name: "Bremner Blvd (CN Tower Front)" },
+      { lat: 43.645, lng: -79.395, name: "Spadina Ave (Chinatown S)" },
+      { lat: 43.647, lng: -79.412, name: "Trinity Bellwoods Park" },
+      { lat: 43.655, lng: -79.41, name: "Portugal Village" },
+      { lat: 43.654, lng: -79.40, name: "Kensington Market Maze" },
+      { lat: 43.657, lng: -79.395, name: "University of Toronto" },
+      { lat: 43.665, lng: -79.39, name: "Bloor St Shopping" },
+      { lat: 43.6631, lng: -79.392, name: "Queen's Park END" }
+    ],
+    start: { lat: 43.685, lng: -79.34, name: "Danforth Ave START" },
+    end: { lat: 43.6631, lng: -79.392, name: "Queen's Park END" },
   },
   newyork: {
     name: "New York (BMW Q Challenge)",
