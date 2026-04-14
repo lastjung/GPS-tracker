@@ -217,7 +217,7 @@ const SegmentCameraView = ({ isRunning, currentSegmentIdx, waypoints, isShortsMo
       paddingBottomRight: [hPadding, 150],
       paddingTopLeft: [hPadding, 80],
       duration: 1.5,
-      maxZoom: 16.5, // Slightly lower to avoid tile missing issues
+      maxZoom: 15.5, // Slightly lower to avoid tile missing issues
       easeLinearity: 0.25
     });
 
@@ -286,7 +286,7 @@ const ResultOverviewHandler = ({ status, waypoints, isShortsMode, setIsSuccessZo
 };
 
 const RealMapVisualizer = () => {
-  const [cityKey, setCityKey] = useState('dc');
+  const [cityKey, setCityKey] = useState('newyork');
   const city = CITIES[cityKey];
   const [isSuccessZooming, setIsSuccessZooming] = useState(false);
   const [bounds, setBounds] = useState(null);
@@ -313,7 +313,7 @@ const RealMapVisualizer = () => {
   const [isPreparing, setIsPreparing] = useState(false);
   const [isMenuCollapsed, setIsMenuCollapsed] = useState(false);
   const [mapStyle, setMapStyle] = useState('street');
-  const [isAutoFollow, setIsAutoFollow] = useState(false);
+  const [isAutoFollow, setIsAutoFollow] = useState(true);
 
   const MAP_STYLES = {
     dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
